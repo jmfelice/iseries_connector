@@ -14,19 +14,32 @@ maintainers = [
   {name = "Jared Felice", email = "jmfelice@icloud.com"}
 ]
 classifiers = [
-
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
 ]
+requires-python = ">=3.9"
 license = {text = "MIT license"}
 dependencies = [
-  "typer"
+    "typer>=0.9.0",
+    "pandas>=2.0.0",
+    "redshift-connector>=2.0.0",
+    "boto3>=1.34.0",
+    "botocore>=1.34.0"
 ]
 
 [project.optional-dependencies]
 dev = [
-    "coverage",  # testing
-    "mypy",  # linting
-    "pytest",  # testing
-    "ruff"  # linting
+    "coverage>=7.0.0",  # testing
+    "mypy>=1.0.0",  # linting
+    "pytest>=8.0.0",  # testing
+    "pytest-cov>=4.0.0",  # testing
+    "ruff>=0.1.0",  # linting
+    "flake8>=7.0.0"  # linting
 ]
 
 [project.urls]
