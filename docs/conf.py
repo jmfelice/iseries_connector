@@ -32,6 +32,21 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 html_theme = 'alabaster'
 html_static_path = ['_static']
 
+# Theme options
+html_theme_options = {
+    'github_user': 'jaredfelice',  # Replace with your GitHub username
+    'github_repo': 'aws_connector',  # Replace with your repository name
+    'github_banner': True,
+    'github_button': True,
+    'github_type': 'star',
+    'github_count': True,
+    'travis_button': False,
+    'show_powered_by': True,
+    'show_related': True,
+    'sidebar_collapse': True,
+    'description': 'AWS Connector - A Python package for AWS services integration',
+}
+
 # -- Extension configuration -------------------------------------------------
 
 # Napoleon settings
