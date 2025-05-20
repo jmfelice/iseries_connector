@@ -17,6 +17,7 @@ Features
 * Configurable through environment variables or direct initialization
 * Comprehensive error handling and logging
 * Type hints and documentation
+* Efficient data transfer using IBM Access Client Solutions
 
 Installation
 -----------
@@ -83,6 +84,8 @@ Contents
    usage
    api
    configuration
+   modules/iseries_connector
+   modules/data_transfer
    contributing
    changelog
 

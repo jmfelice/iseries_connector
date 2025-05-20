@@ -95,7 +95,7 @@ ISERIES_RETRY_DELAY=5
 
 ## Documentation
 
-Full documentation is available at [Read the Docs](https://iseries-connector.readthedocs.io/).
+Full documentation is available at [Read the Docs](https://jmfelice.github.io/iseries_connector/).
 
 ## Contributing
 
