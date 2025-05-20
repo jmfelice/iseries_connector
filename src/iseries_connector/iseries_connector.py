@@ -23,7 +23,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 @dataclass
 class ISeriesConfig:
-    """Configuration for iSeries connection.
+    """
+    Configuration for iSeries connection.
     
     This class can be initialized with direct values or from environment variables.
     Environment variables take precedence over direct values.
@@ -37,20 +38,20 @@ class ISeriesConfig:
         ISERIES_RETRY_DELAY: Delay between retries in seconds
     
     Examples:
-        ```python
+    
         # Direct initialization
         config = ISeriesConfig(
             dsn="MY_ISERIES_DSN",
             username="admin",
             password="secret"
         )
-        
+
         # From environment variables
         config = ISeriesConfig.from_env()
-        
+
         # Mixed initialization
         config = ISeriesConfig(dsn="MY_DSN").from_env()
-        ```
+        
     """
     dsn: str
     username: str
@@ -108,11 +109,11 @@ class ISeriesConn:
         - _get_cursor(): Override to return a mock cursor
         
         Example:
-            ```python
+        
             class MockISeriesConn(ISeriesConn):
                 def _get_connection(self):
                     return MockConnection()
-            ```
+                    
     """
     
     def __init__(

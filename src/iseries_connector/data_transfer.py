@@ -5,7 +5,7 @@ the IBM Access Client Solutions Data Transfer feature. It is designed to be more
 efficient than ODBC for large data volumes.
 
 Example:
-    ```python
+
     # Create a data transfer configuration
     config = DataTransferConfig(
         host_name="your.hostname.com",
@@ -24,7 +24,7 @@ Example:
         sql_statement="SELECT * FROM SCHEMA.TABLE",
         output_directory="path/to/output"
     )
-    ```
+    
 """
 
 from dataclasses import dataclass
@@ -118,7 +118,7 @@ class DataTransferManager:
     systems using the IBM Access Client Solutions Data Transfer feature.
     
     Example:
-        ```python
+    
         # Create a data transfer manager
         dtm = DataTransferManager(DataTransferConfig(
             host_name="your.hostname.com"
@@ -134,7 +134,7 @@ class DataTransferManager:
         
         if result.is_successful:
             print(f"Transferred {result.row_count} rows")
-        ```
+            
     """
     
     def __init__(self, config: DataTransferConfig):
