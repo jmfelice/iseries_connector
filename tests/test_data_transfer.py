@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import subprocess
 import importlib.resources
+from typing import List
+import shutil
 
 from iseries_connector.data_transfer import (
     DataTransferConfig,
@@ -23,13 +25,33 @@ def mock_acs_launcher():
         yield
 
 @pytest.fixture
-def config(mock_acs_launcher):
+def temp_dirs(tmp_path):
+    """Create and cleanup temporary directories for testing."""
+    # Create temporary directories
+    raw_data_dir = tmp_path / "raw_data"
+    data_package_dir = tmp_path / "data_package"
+    raw_data_dir.mkdir()
+    data_package_dir.mkdir()
+    
+    yield raw_data_dir, data_package_dir
+    
+    # Cleanup after tests
+    if raw_data_dir.exists():
+        shutil.rmtree(raw_data_dir)
+    if data_package_dir.exists():
+        shutil.rmtree(data_package_dir)
+
+@pytest.fixture
+def config(mock_acs_launcher, temp_dirs):
     """Create a test configuration."""
+    raw_data_dir, data_package_dir = temp_dirs
     return DataTransferConfig(
         host_name="test.hostname.com",
         database="*SYSBAS",
         acs_launcher_path="C:/test/acslaunch_win-64.exe",
-        batch_size=2
+        batch_size=2,
+        local_raw_data_directory=str(raw_data_dir),
+        local_data_package_directory=str(data_package_dir)
     )
 
 @pytest.fixture
@@ -48,10 +70,12 @@ def test_config_validation(mock_acs_launcher):
         with pytest.raises(ConfigurationError):
             DataTransferConfig(host_name="test", acs_launcher_path="invalid/path")
 
-def test_config_default_paths(config):
+def test_config_default_paths(tmp_path):
     """Test default path configuration."""
-    assert config.local_raw_data_directory.endswith("raw_data")
-    assert config.local_data_package_directory.endswith("data_package")
+    with patch('pathlib.Path.cwd', return_value=tmp_path):
+        config = DataTransferConfig(host_name="test")
+        assert config.local_raw_data_directory.endswith("raw_data")
+        assert config.local_data_package_directory.endswith("data_package")
 
 def test_get_template_content(dtm, tmp_path):
     """Test template content retrieval."""
@@ -124,25 +148,28 @@ def test_create_dtfx_file(dtm, tmp_path):
     assert "FileEncoding=UTF-8" in content
     assert "DataTransferVersion=1.0" in content
 
-@patch('subprocess.run')
-def test_transfer_data(mock_run, dtm, tmp_path):
-    """Test data transfer execution."""
-    # Mock successful subprocess run
-    mock_result = MagicMock()
-    mock_result.stdout = "Successfully transferred 100 rows"
-    mock_result.returncode = 0
-    mock_run.return_value = mock_result
+@patch('subprocess.Popen')
+def test_transfer_data_single(mock_popen, dtm, temp_dirs):
+    """Test single data transfer execution."""
+    raw_data_dir, _ = temp_dirs
+    
+    # Mock successful subprocess
+    mock_process = MagicMock()
+    mock_process.communicate.return_value = ("Successfully transferred 100 rows", "")
+    mock_process.returncode = 0
+    mock_popen.return_value = mock_process
     
     # Execute transfer
-    result = dtm.transfer_data(
-        host_name="test.hostname.com",
+    results = list(dtm.transfer_data(
         source_schema="TEST",
         source_table="TABLE",
         sql_statement="SELECT * FROM TEST.TABLE",
-        output_directory=str(tmp_path)
-    )
+        output_directory=str(raw_data_dir)
+    ))
     
     # Verify result
+    assert len(results) == 1
+    result = results[0]
     assert result.is_successful
     assert result.row_count == 100
     assert result.success
@@ -150,82 +177,138 @@ def test_transfer_data(mock_run, dtm, tmp_path):
     assert result.file_path.endswith("TEST_TABLE.csv")
     
     # Verify command was called correctly
-    mock_run.assert_called_once()
-    call_args = mock_run.call_args[0][0]
+    mock_popen.assert_called_once()
+    call_args = mock_popen.call_args[0][0]
     assert "start" in call_args
     assert "acslaunch_win-64.exe" in call_args
     assert "download" in call_args
     assert ".dtfx" in call_args
 
-@patch('subprocess.run')
-def test_transfer_data_failure(mock_run, dtm, tmp_path):
+@patch('subprocess.Popen')
+def test_transfer_data_batch(mock_popen, dtm, temp_dirs):
+    """Test batch data transfer execution."""
+    raw_data_dir, _ = temp_dirs
+    
+    # Mock successful subprocess
+    mock_process = MagicMock()
+    mock_process.communicate.return_value = ("Successfully transferred 100 rows", "")
+    mock_process.returncode = 0
+    mock_popen.return_value = mock_process
+    
+    # Execute batch transfer
+    schemas = ["TEST1", "TEST2", "TEST3"]
+    tables = ["TABLE1", "TABLE2", "TABLE3"]
+    sql_statements = [
+        "SELECT * FROM TEST1.TABLE1",
+        "SELECT * FROM TEST2.TABLE2",
+        "SELECT * FROM TEST3.TABLE3"
+    ]
+    
+    results = list(dtm.transfer_data(
+        source_schema=schemas,
+        source_table=tables,
+        sql_statement=sql_statements,
+        output_directory=str(raw_data_dir)
+    ))
+    
+    # Verify results
+    assert len(results) == 3
+    assert all(r.is_successful for r in results)
+    assert all(r.row_count == 100 for r in results)
+    assert mock_popen.call_count == 3
+
+@patch('subprocess.Popen')
+def test_transfer_data_failure(mock_popen, dtm, temp_dirs):
     """Test data transfer failure."""
-    # Mock failed subprocess run
-    mock_run.side_effect = subprocess.CalledProcessError(
-        returncode=1,
-        cmd="test",
-        stderr="Error: Connection failed"
-    )
+    raw_data_dir, _ = temp_dirs
+    
+    # Mock failed subprocess
+    mock_process = MagicMock()
+    mock_process.communicate.return_value = ("", "Error: Connection failed")
+    mock_process.returncode = 1
+    mock_popen.return_value = mock_process
     
     # Execute transfer
-    result = dtm.transfer_data(
-        host_name="test.hostname.com",
+    results = list(dtm.transfer_data(
         source_schema="TEST",
         source_table="TABLE",
         sql_statement="SELECT * FROM TEST.TABLE",
-        output_directory=str(tmp_path)
-    )
+        output_directory=str(raw_data_dir)
+    ))
     
     # Verify result
+    assert len(results) == 1
+    result = results[0]
     assert not result.is_successful
     assert result.row_count is None
     assert not result.success
     assert "Error: Connection failed" in result.error
 
-def test_transfer_multiple(dtm, tmp_path):
-    """Test multiple data transfers."""
-    transfers = [
-        {
-            'host_name': 'test1.hostname.com',
-            'source_schema': 'TEST1',
-            'source_table': 'TABLE1',
-            'sql_statement': 'SELECT * FROM TEST1.TABLE1'
-        },
-        {
-            'host_name': 'test2.hostname.com',
-            'source_schema': 'TEST2',
-            'source_table': 'TABLE2',
-            'sql_statement': 'SELECT * FROM TEST2.TABLE2'
-        },
-        {
-            'host_name': 'test3.hostname.com',
-            'source_schema': 'TEST3',
-            'source_table': 'TABLE3',
-            'sql_statement': 'SELECT * FROM TEST3.TABLE3'
-        }
-    ]
+def test_transfer_data_validation(dtm):
+    """Test transfer data validation."""
+    # Test mismatched list lengths
+    with pytest.raises(ValidationError):
+        list(dtm.transfer_data(
+            source_schema=["TEST1", "TEST2"],
+            source_table=["TABLE1"],
+            sql_statement=["SELECT * FROM TEST1.TABLE1"]
+        ))
+
+@patch('subprocess.Popen')
+def test_transfer_data_custom_output(mock_popen, dtm, temp_dirs):
+    """Test data transfer with custom output directory."""
+    raw_data_dir, _ = temp_dirs
     
-    # Mock transfer_data to avoid actual execution
-    with patch.object(dtm, 'transfer_data') as mock_transfer:
-        mock_transfer.return_value = DataTransferResult(
-            start_time=datetime.now(),
-            end_time=datetime.now(),
-            duration=1.0,
-            row_count=100,
-            output="Success",
-            success=True
-        )
-        
-        # Execute transfers
-        results = list(dtm.transfer_multiple(transfers, str(tmp_path)))
-        
-        # Verify results
-        assert len(results) == 3
-        assert all(r.is_successful for r in results)
-        assert mock_transfer.call_count == 3
-        
-        # Verify host names were passed correctly
-        calls = mock_transfer.call_args_list
-        assert calls[0][1]['host_name'] == 'test1.hostname.com'
-        assert calls[1][1]['host_name'] == 'test2.hostname.com'
-        assert calls[2][1]['host_name'] == 'test3.hostname.com' 
+    # Mock successful subprocess
+    mock_process = MagicMock()
+    mock_process.communicate.return_value = ("Successfully transferred 100 rows", "")
+    mock_process.returncode = 0
+    mock_popen.return_value = mock_process
+    
+    # Create custom output directory within temp directory
+    custom_output = raw_data_dir / "custom_output"
+    custom_output.mkdir()
+    
+    # Execute transfer
+    results = list(dtm.transfer_data(
+        source_schema="TEST",
+        source_table="TABLE",
+        sql_statement="SELECT * FROM TEST.TABLE",
+        output_directory=str(custom_output)
+    ))
+    
+    # Verify result
+    assert len(results) == 1
+    result = results[0]
+    assert result.is_successful
+    assert str(custom_output) in result.file_path
+    assert result.file_path.endswith("TEST_TABLE.csv")
+
+@patch('subprocess.Popen')
+def test_transfer_data_batch_size(mock_popen, dtm, temp_dirs):
+    """Test data transfer with batch size limits."""
+    raw_data_dir, _ = temp_dirs
+    
+    # Mock successful subprocess
+    mock_process = MagicMock()
+    mock_process.communicate.return_value = ("Successfully transferred 100 rows", "")
+    mock_process.returncode = 0
+    mock_popen.return_value = mock_process
+    
+    # Create 5 transfers with batch size of 2
+    dtm.config.batch_size = 2
+    schemas = ["TEST1", "TEST2", "TEST3", "TEST4", "TEST5"]
+    tables = ["TABLE1", "TABLE2", "TABLE3", "TABLE4", "TABLE5"]
+    sql_statements = [f"SELECT * FROM {s}.{t}" for s, t in zip(schemas, tables)]
+    
+    results = list(dtm.transfer_data(
+        source_schema=schemas,
+        source_table=tables,
+        sql_statement=sql_statements,
+        output_directory=str(raw_data_dir)
+    ))
+    
+    # Verify results
+    assert len(results) == 5
+    assert all(r.is_successful for r in results)
+    assert mock_popen.call_count == 5  # Should be called 5 times total 
