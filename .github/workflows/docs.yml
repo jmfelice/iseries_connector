@@ -38,6 +38,12 @@ jobs:
           pip install -e ".[dev]"
           pip install sphinx sphinx-rtd-theme
 
+      - name: Clean build directory
+        run: |
+          cd docs
+          rm -rf _build/
+          make clean
+
       - name: Build documentation
         run: |
           cd docs
