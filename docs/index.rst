@@ -3,53 +3,74 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-AWS Connector Documentation
-=========================
+Welcome to iSeries Connector's documentation!
+=========================================
 
-Welcome to the AWS Connector documentation! This package provides a comprehensive set of tools for interacting with AWS services, specifically focusing on Redshift, S3, and AWS SSO integration.
+iSeries Connector is a Python library for connecting to and interacting with IBM iSeries databases. It provides a simple and efficient way to execute SQL queries and statements against iSeries databases using pyodbc.
 
-The package is designed to be easy to use while providing robust error handling and configuration management. It supports both direct credential management and AWS SSO authentication.
+Features
+--------
+
+* Easy connection management with automatic retry logic
+* Support for both single and parallel statement execution
+* Pandas DataFrame integration for query results
+* Configurable through environment variables or direct initialization
+* Comprehensive error handling and logging
+* Type hints and documentation
 
 Installation
 -----------
 
-You can install the package using pip:
+You can install iSeries Connector using pip:
 
 .. code-block:: bash
 
-    pip install aws-connector
+   pip install iseries-connector
 
 Quick Start
 ----------
 
-Here's a quick example of how to use the package:
+Here's a quick example of how to use iSeries Connector:
 
 .. code-block:: python
 
-    from aws_connector import RedConn, S3Connector, AWSsso
+   from iseries_connector import ISeriesConn, ISeriesConfig
 
-    # Initialize AWS SSO
-    sso = AWSsso()
-    sso.ensure_valid_credentials()
+   # Create a configuration
+   config = ISeriesConfig(
+       dsn="MY_ISERIES_DSN",
+       username="admin",
+       password="secret"
+   )
 
-    # Connect to Redshift
-    redshift = RedConn(
-        host="your-cluster.xxxxx.region.redshift.amazonaws.com",
-        username="admin",
-        password="secret",
-        database="mydb"
-    )
+   # Or use environment variables
+   config = ISeriesConfig.from_env()
 
-    # Query data
-    with redshift as conn:
-        df = conn.fetch("SELECT * FROM my_table LIMIT 10")
+   # Connect and execute queries
+   with ISeriesConn(**config.__dict__) as conn:
+       # Execute a query and get results as DataFrame
+       df = conn.fetch("SELECT * FROM MYTABLE")
+       
+       # Execute multiple statements in parallel
+       results = conn.execute_statements([
+           "UPDATE TABLE1 SET COL1 = 'value1'",
+           "UPDATE TABLE2 SET COL2 = 'value2'"
+       ], parallel=True)
 
-    # Upload to S3
-    s3 = S3Connector(
-        bucket="my-bucket",
-        directory="data/"
-    )
-    result = s3.upload_to_s3(df, table_name="my_table")
+Configuration
+------------
+
+The library can be configured using environment variables or direct initialization:
+
+.. code-block:: python
+
+   # Environment Variables
+   ISERIES_DSN=MY_DSN
+   ISERIES_USERNAME=admin
+   ISERIES_PASSWORD=secret
+   ISERIES_TIMEOUT=30
+   ISERIES_MAX_RETRIES=3
+   ISERIES_RETRY_DELAY=5
 
 Contents
 --------
@@ -58,10 +79,17 @@ Contents
    :maxdepth: 2
    :caption: Contents:
 
-   modules/redshift
-   modules/s3
-   modules/aws_sso
+   installation
+   usage
+   api
    configuration
-   examples
    contributing
+   changelog
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
 

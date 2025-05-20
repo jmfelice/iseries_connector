@@ -3,15 +3,15 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "{{package_name}}"
+name = "iseries-connector"
 version = "0.1.0"
-description = "{{package_description}}"
+description = "A Python library for connecting to and interacting with IBM iSeries databases"
 readme = "README.md"
 authors = [
-  {name = "{{author_name}}", email = "{{author_email}}"}
+  {name = "Enterprise DW", email = "enterprise.dw@example.com"}
 ]
 maintainers = [
-  {name = "{{author_name}}", email = "{{author_email}}"}
+  {name = "Enterprise DW", email = "enterprise.dw@example.com"}
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -21,11 +21,16 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 requires-python = ">=3.9"
 license = {text = "MIT license"}
 dependencies = [
-    # Add your package dependencies here
+    "pandas>=2.0.0",
+    "pyodbc>=4.0.0",
 ]
 
 [project.optional-dependencies]
@@ -35,13 +40,16 @@ dev = [
     "pytest>=8.0.0",  # testing
     "pytest-cov>=4.0.0",  # testing
     "ruff>=0.1.0",  # linting
-    "flake8>=7.0.0"  # linting
+    "flake8>=7.0.0",  # linting
+    "sphinx>=7.0.0",  # documentation
+    "sphinx-rtd-theme>=1.0.0",  # documentation theme
 ]
 
 [project.urls]
-bugs = "https://github.com/{{github_username}}/{{package_name}}/issues"
-changelog = "https://github.com/{{github_username}}/{{package_name}}/blob/master/changelog.md"
-homepage = "https://github.com/{{github_username}}/{{package_name}}"
+bugs = "https://github.com/enterprise-dw/iseries-connector/issues"
+changelog = "https://github.com/enterprise-dw/iseries-connector/blob/master/changelog.md"
+homepage = "https://github.com/enterprise-dw/iseries-connector"
+documentation = "https://iseries-connector.readthedocs.io/"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

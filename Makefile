@@ -49,7 +49,7 @@ clean-test: ## remove test and coverage artifacts
 	rm -fr .pytest_cache
 
 lint/flake8: ## check style with flake8
-	flake8 aws_connector tests
+	flake8 iseries_connector tests
 
 
 lint: lint/flake8 ## check style
@@ -61,15 +61,15 @@ test-all: ## run tests on every Python version with tox
 	tox
 
 coverage: ## check code coverage quickly with the default Python
-	coverage run --source aws_connector setup.py test
+	coverage run --source iseries_connector setup.py test
 	coverage report -m
 	coverage html
 	$(BROWSER) htmlcov/index.html
 
 docs: ## generate Sphinx HTML documentation, including API docs
-	rm -f docs/aws_connector.rst
+	rm -f docs/iseries_connector.rst
 	rm -f docs/modules.rst
-	sphinx-apidoc -o docs/ aws_connector
+	sphinx-apidoc -o docs/ iseries_connector
 	$(MAKE) -C docs clean
 	$(MAKE) -C docs html
 	$(BROWSER) docs/_build/html/index.html

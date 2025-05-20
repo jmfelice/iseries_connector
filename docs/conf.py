@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'AWS Connector'
+project = 'iSeries Connector'
 copyright = '2025, Jared Felice'
 author = 'Jared Felice'
 
@@ -35,7 +35,7 @@ html_static_path = ['_static']
 # Theme options
 html_theme_options = {
     'github_user': 'jaredfelice',  # Replace with your GitHub username
-    'github_repo': 'aws_connector',  # Replace with your repository name
+    'github_repo': 'iseries_connector',  # Replace with your repository name
     'github_banner': True,
     'github_button': True,
     'github_type': 'star',
@@ -44,7 +44,7 @@ html_theme_options = {
     'show_powered_by': True,
     'show_related': True,
     'sidebar_collapse': True,
-    'description': 'AWS Connector - A Python package for AWS services integration',
+    'description': 'iSeries Connector - A Python package for iSeries services integration',
 }
 
 # -- Extension configuration -------------------------------------------------
@@ -67,7 +67,7 @@ napoleon_type_aliases = None
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'pandas': ('https://pandas.pydata.org/docs/', None),
-    'boto3': ('https://boto3.amazonaws.com/v1/documentation/api/latest/', None),
+    'pyodbc': ('https://github.com/mkleehammer/pyodbc/wiki', None),
 }
 
 # Autodoc settings
@@ -120,4 +120,4 @@ html_sidebars = {
 }
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'aws_connectordoc'
+htmlhelp_basename = 'iseries_connectordoc'

@@ -24,5 +24,5 @@ deploy:
     secure: PLEASE_REPLACE_ME
   on:
     tags: true
-    repo: jmfelice/aws_connector
+    repo: jmfelice/iseries_connector
     python: 3.8

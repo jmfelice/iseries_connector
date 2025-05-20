@@ -1,117 +1,105 @@
 import pandas as pd
-import redshift_connector
-from redshift_connector import Connection
-from typing import Union, List, Dict, Optional, Any, Generator
-import time
-from concurrent.futures import ThreadPoolExecutor
-import logging
-from dataclasses import dataclass
+import pyodbc
 import os
-import uuid
+import warnings
+import time
+import logging
+from typing import Union, List, Dict, Optional, Any, Generator
+from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 from .exceptions import (
-    AWSConnectorError,
-    RedshiftError,
+    ISeriesConnectorError,
     ConnectionError,
-    QueryError
+    QueryError,
+    ValidationError
 )
 from .utils import setup_logging
 
 # Configure logging
 logger = setup_logging(__name__)
 
+# Suppress warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 @dataclass
-class RedshiftConfig:
-    """Configuration for Redshift connection.
+class ISeriesConfig:
+    """Configuration for iSeries connection.
     
     This class can be initialized with direct values or from environment variables.
     Environment variables take precedence over direct values.
     
     Environment Variables:
-        REDSHIFT_HOST: The hostname or endpoint of the Redshift cluster
-        REDSHIFT_USERNAME: The username for authentication
-        REDSHIFT_PASSWORD: The password for authentication
-        REDSHIFT_DATABASE: The name of the database to connect to
-        REDSHIFT_PORT: The port number for the Redshift cluster
-        REDSHIFT_TIMEOUT: Connection timeout in seconds
-        REDSHIFT_SSL: Whether to use SSL for the connection
-        REDSHIFT_MAX_RETRIES: Maximum number of connection retries
-        REDSHIFT_RETRY_DELAY: Delay between retries in seconds
+        ISERIES_DSN: The Data Source Name for the iSeries connection
+        ISERIES_USERNAME: The username for authentication
+        ISERIES_PASSWORD: The password for authentication
+        ISERIES_TIMEOUT: Connection timeout in seconds
+        ISERIES_MAX_RETRIES: Maximum number of connection retries
+        ISERIES_RETRY_DELAY: Delay between retries in seconds
     
     Examples:
         ```python
         # Direct initialization
-        config = RedshiftConfig(
-            host="my-cluster.xxxxx.region.redshift.amazonaws.com",
+        config = ISeriesConfig(
+            dsn="MY_ISERIES_DSN",
             username="admin",
-            password="secret",
-            database="mydb"
+            password="secret"
         )
         
         # From environment variables
-        config = RedshiftConfig.from_env()
+        config = ISeriesConfig.from_env()
         
         # Mixed initialization
-        config = RedshiftConfig(host="my-cluster").from_env()
+        config = ISeriesConfig(dsn="MY_DSN").from_env()
         ```
     """
-    host: str
+    dsn: str
     username: str
     password: str
-    database: str
-    port: int = 5439
     timeout: int = 30
-    ssl: bool = True
     max_retries: int = 3
     retry_delay: int = 5
     
     @classmethod
-    def from_env(cls) -> 'RedshiftConfig':
+    def from_env(cls) -> 'ISeriesConfig':
         """Create a configuration from environment variables.
         
         Returns:
-            RedshiftConfig: A new configuration instance
+            ISeriesConfig: A new configuration instance
             
         Raises:
             ValueError: If required environment variables are missing
         """
         return cls(
-            host=os.environ.get('REDSHIFT_HOST', ''),
-            username=os.environ.get('REDSHIFT_USERNAME', ''),
-            password=os.environ.get('REDSHIFT_PASSWORD', ''),
-            database=os.environ.get('REDSHIFT_DATABASE', ''),
-            port=int(os.environ.get('REDSHIFT_PORT', '5439')),
-            timeout=int(os.environ.get('REDSHIFT_TIMEOUT', '30')),
-            ssl=os.environ.get('REDSHIFT_SSL', 'true').lower() == 'true',
-            max_retries=int(os.environ.get('REDSHIFT_MAX_RETRIES', '3')),
-            retry_delay=int(os.environ.get('REDSHIFT_RETRY_DELAY', '5'))
+            dsn=os.environ.get('ISERIES_DSN', ''),
+            username=os.environ.get('ISERIES_USERNAME', ''),
+            password=os.environ.get('ISERIES_PASSWORD', ''),
+            timeout=int(os.environ.get('ISERIES_TIMEOUT', '30')),
+            max_retries=int(os.environ.get('ISERIES_MAX_RETRIES', '3')),
+            retry_delay=int(os.environ.get('ISERIES_RETRY_DELAY', '5'))
         )
     
     def validate(self) -> None:
         """Validate the configuration parameters.
         
         Raises:
-            ValueError: If any required parameters are missing or invalid
+            ValidationError: If any required parameters are missing or invalid
         """
-        if not self.host:
-            raise ValueError("Host cannot be empty")
+        if not self.dsn:
+            raise ValidationError("DSN cannot be empty")
         if not self.username:
-            raise ValueError("Username cannot be empty")
+            raise ValidationError("Username cannot be empty")
         if not self.password:
-            raise ValueError("Password cannot be empty")
-        if not self.database:
-            raise ValueError("Database cannot be empty")
-        if self.port <= 0:
-            raise ValueError("Port must be a positive number")
+            raise ValidationError("Password cannot be empty")
         if self.timeout <= 0:
-            raise ValueError("Timeout must be a positive number")
+            raise ValidationError("Timeout must be a positive number")
         if self.max_retries < 0:
-            raise ValueError("Max retries cannot be negative")
+            raise ValidationError("Max retries cannot be negative")
         if self.retry_delay < 0:
-            raise ValueError("Retry delay cannot be negative")
+            raise ValidationError("Retry delay cannot be negative")
 
-class RedConn:
+class ISeriesConn:
     """
-    A class to handle Redshift database connections and operations.
+    A class to handle iSeries database connections and operations.
     Implements context manager protocol for safe resource management.
     
     Testing:
@@ -121,7 +109,7 @@ class RedConn:
         
         Example:
             ```python
-            class MockRedConn(RedConn):
+            class MockISeriesConn(ISeriesConn):
                 def _get_connection(self):
                     return MockConnection()
             ```
@@ -129,88 +117,91 @@ class RedConn:
     
     def __init__(
         self,
-        host: str,
+        dsn: str,
         username: str,
         password: str,
-        database: str,
-        port: int = 5439,
         timeout: int = 30,
-        ssl: bool = True,
         max_retries: int = 3,
         retry_delay: int = 5
     ):
         """
-        Initialize the RedConn class with database credentials.
+        Initialize the ISeriesConn class with database credentials.
 
         Args:
-            host (str): The hostname or endpoint of the Redshift cluster
+            dsn (str): The Data Source Name for the iSeries connection
             username (str): The username for authentication
             password (str): The password for authentication
-            database (str): The name of the database to connect to
-            port (int): The port number for the Redshift cluster (default: 5439)
             timeout (int): Connection timeout in seconds (default: 30)
-            ssl (bool): Whether to use SSL for the connection (default: True)
             max_retries (int): Maximum number of connection retries (default: 3)
             retry_delay (int): Delay between retries in seconds (default: 5)
         """
-        self.config = RedshiftConfig(
-            host=host,
+        self.config = ISeriesConfig(
+            dsn=dsn,
             username=username,
             password=password,
-            database=database,
-            port=port,
             timeout=timeout,
-            ssl=ssl,
             max_retries=max_retries,
             retry_delay=retry_delay
         )
-        self.conn: Optional[Connection] = None
+        self.conn: Optional[pyodbc.Connection] = None
         self.echo: bool = False
         self._validate_config()
     
+    def __str__(self) -> str:
+        """Return a user-friendly string representation of the connection.
+        
+        Returns:
+            str: A string describing the connection state and configuration
+        """
+        status = "Connected" if self.conn is not None else "Disconnected"
+        return (
+            f"ISeriesConn(dsn='{self.config.dsn}', "
+            f"username='{self.config.username}', "
+            f"status='{status}', "
+            f"timeout={self.config.timeout}s, "
+            f"max_retries={self.config.max_retries})"
+        )
+
+    def __repr__(self) -> str:
+        """Return a detailed string representation of the connection.
+        
+        Returns:
+            str: A detailed string representation including all configuration parameters
+        """
+        return (
+            f"ISeriesConn("
+            f"dsn='{self.config.dsn}', "
+            f"username='{self.config.username}', "
+            f"timeout={self.config.timeout}, "
+            f"max_retries={self.config.max_retries}, "
+            f"retry_delay={self.config.retry_delay}, "
+            f"echo={self.echo}, "
+            f"connected={self.conn is not None}"
+            f")"
+        )
+    
     def _validate_config(self) -> None:
         """Validate the configuration parameters"""
-        if not self.config.host:
-            raise ValueError("Host cannot be empty")
-        if not self.config.username:
-            raise ValueError("Username cannot be empty")
-        if not self.config.password:
-            raise ValueError("Password cannot be empty")
-        if not self.config.database:
-            raise ValueError("Database cannot be empty")
-        if self.config.port <= 0:
-            raise ValueError("Port must be a positive number")
-        if self.config.timeout <= 0:
-            raise ValueError("Timeout must be a positive number")
-        if self.config.max_retries < 0:
-            raise ValueError("Max retries cannot be negative")
-        if self.config.retry_delay < 0:
-            raise ValueError("Retry delay cannot be negative")
+        self.config.validate()
 
-    def _get_connection(self) -> Connection:
+    def _get_connection(self) -> pyodbc.Connection:
         """Get a database connection. Override this method for testing.
         
         Returns:
-            Connection: A database connection instance
+            pyodbc.Connection: A database connection instance
             
         Raises:
             ConnectionError: If there's an error establishing the connection
         """
-        return redshift_connector.connect(
-            host=self.config.host,
-            user=self.config.username,
-            password=self.config.password,
-            database=self.config.database,
-            port=self.config.port,
-            timeout=self.config.timeout,
-            ssl=self.config.ssl
+        return pyodbc.connect(
+            f"DSN={self.config.dsn};UID={self.config.username};PWD={self.config.password}"
         )
     
-    def _get_cursor(self) -> redshift_connector.Cursor:
+    def _get_cursor(self) -> pyodbc.Cursor:
         """Get a database cursor. Override this method for testing.
         
         Returns:
-            redshift_connector.Cursor: A database cursor instance
+            pyodbc.Cursor: A database cursor instance
             
         Raises:
             ConnectionError: If there's no active connection
@@ -220,11 +211,11 @@ class RedConn:
         return self.conn.cursor()
     
     @property
-    def connection(self) -> Connection:
+    def connection(self) -> pyodbc.Connection:
         """Get the current database connection.
         
         Returns:
-            Connection: The current database connection
+            pyodbc.Connection: The current database connection
             
         Raises:
             ConnectionError: If there's no active connection
@@ -234,24 +225,24 @@ class RedConn:
         return self.conn
     
     @property
-    def cursor(self) -> redshift_connector.Cursor:
+    def cursor(self) -> pyodbc.Cursor:
         """Get the current database cursor.
         
         Returns:
-            redshift_connector.Cursor: The current database cursor
+            pyodbc.Cursor: The current database cursor
             
         Raises:
             ConnectionError: If there's no active connection
         """
         return self._get_cursor()
 
-    def connect(self) -> Connection:
+    def connect(self) -> pyodbc.Connection:
         """
-        Establishes a connection to a Redshift database using credentials.
+        Establishes a connection to an iSeries database using credentials.
         Implements retry logic for transient failures.
 
         Returns:
-            Connection: A connection object to the Redshift database
+            pyodbc.Connection: A connection object to the iSeries database
 
         Raises:
             ConnectionError: If there's an error establishing the connection after retries
@@ -266,7 +257,7 @@ class RedConn:
                 logger.warning(f"Connection attempt {attempt + 1} failed: {str(e)}")
                 time.sleep(self.config.retry_delay)
 
-    def __enter__(self) -> 'RedConn':
+    def __enter__(self) -> 'ISeriesConn':
         """Context manager entry"""
         self.connect()
         return self
@@ -336,7 +327,7 @@ class RedConn:
         echo: Optional[bool] = None
     ) -> List[Dict[str, Any]]:
         """
-        Executes one or more SQL statements in Redshift and returns the results.
+        Executes one or more SQL statements in iSeries and returns the results.
 
         Args:
             statements (Union[str, List[str]]): A single SQL statement or list of SQL statements
@@ -365,9 +356,9 @@ class RedConn:
             results = []
             for statement in statements:
                 statement_start_time = time.time()
-                with self.conn.cursor() as connection:
+                with self.conn.cursor() as cursor:
                     try:
-                        connection.execute(statement)
+                        cursor.execute(statement)
                         results.append({
                             "success": True, 
                             "statement": statement,
