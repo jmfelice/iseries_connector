@@ -146,7 +146,7 @@ class DataTransferResult:
     Attributes:
         start_time: When the transfer started
         end_time: When the transfer completed
-        duration: Total duration of the transfer
+        duration: Total duration of the transfer in seconds
         row_count: Number of rows transferred (if available)
         output: Command output
         success: Whether the transfer was successful
@@ -155,6 +155,8 @@ class DataTransferResult:
         source_schema: The source schema name
         source_table: The source table name
     """
+    source_schema: str
+    source_table: str
     start_time: datetime
     end_time: datetime
     duration: float
@@ -163,8 +165,21 @@ class DataTransferResult:
     success: bool
     error: Optional[str] = None
     file_path: Optional[str] = None
-    source_schema: str
-    source_table: str
+
+    def __post_init__(self) -> None:
+        """Validate the result data after initialization.
+        
+        Raises:
+            ValidationError: If the data is invalid
+        """
+        if self.duration < 0:
+            raise ValidationError("Duration cannot be negative")
+        
+        if self.start_time > self.end_time:
+            raise ValidationError("Start time must be before end time")
+        
+        if self.row_count is not None and self.row_count < 0:
+            raise ValidationError("Row count cannot be negative")
 
     @property
     def is_successful(self) -> bool:
@@ -172,38 +187,19 @@ class DataTransferResult:
         
         A transfer is considered successful if the process completed without errors,
         regardless of whether the row count was captured.
+        
+        Returns:
+            bool: True if the transfer was successful
         """
         return self.success
 
-    def to_dataframe(self) -> pd.DataFrame:
-        """Convert the result to a pandas DataFrame.
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the result to a dictionary.
         
         Returns:
-            pd.DataFrame: A single-row DataFrame containing the result data
+            Dict[str, Any]: Dictionary representation of the result
         """
-        data = {
-            'start_time': [self.start_time],
-            'end_time': [self.end_time],
-            'duration': [self.duration],
-            'row_count': [self.row_count],
-            'success': [self.success],
-            'error': [self.error],
-            'file_path': [self.file_path],
-            'source_schema': [self.source_schema],
-            'source_table': [self.source_table]
-        }
-        return pd.DataFrame(data)
-
-    def to_json(self, indent: int = 2) -> str:
-        """Convert the result to a JSON string.
-        
-        Args:
-            indent: Number of spaces for indentation (default: 2)
-            
-        Returns:
-            str: JSON string representation of the result
-        """
-        data = {
+        return {
             'start_time': self.start_time.isoformat(),
             'end_time': self.end_time.isoformat(),
             'duration': self.duration,
@@ -214,7 +210,85 @@ class DataTransferResult:
             'source_schema': self.source_schema,
             'source_table': self.source_table
         }
-        return json.dumps(data, indent=indent)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'DataTransferResult':
+        """Create a result from a dictionary.
+        
+        Args:
+            data: Dictionary containing result data
+            
+        Returns:
+            DataTransferResult: New result instance
+            
+        Raises:
+            ValidationError: If the data is invalid
+        """
+        try:
+            return cls(
+                start_time=datetime.fromisoformat(data['start_time']),
+                end_time=datetime.fromisoformat(data['end_time']),
+                duration=float(data['duration']),
+                row_count=data.get('row_count'),
+                output=data.get('output'),
+                success=bool(data['success']),
+                error=data.get('error'),
+                file_path=data.get('file_path'),
+                source_schema=str(data['source_schema']),
+                source_table=str(data['source_table'])
+            )
+        except (KeyError, ValueError) as e:
+            raise ValidationError(f"Invalid data format: {str(e)}")
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Convert the result to a pandas DataFrame.
+        
+        Returns:
+            pd.DataFrame: A single-row DataFrame containing the result data
+        """
+        return pd.DataFrame([self.to_dict()])
+
+    def to_json(self, indent: int = 2) -> str:
+        """Convert the result to a JSON string.
+        
+        Args:
+            indent: Number of spaces for indentation (default: 2)
+            
+        Returns:
+            str: JSON string representation of the result
+        """
+        return json.dumps(self.to_dict(), indent=indent)
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare two results for equality.
+        
+        Args:
+            other: Another object to compare with
+            
+        Returns:
+            bool: True if the results are equal
+        """
+        if not isinstance(other, DataTransferResult):
+            return NotImplemented
+        return self.to_dict() == other.to_dict()
+
+    def __repr__(self) -> str:
+        """String representation of the result for debugging.
+        
+        Returns:
+            str: Debug representation
+        """
+        return (
+            f"DataTransferResult("
+            f"start_time={self.start_time!r}, "
+            f"end_time={self.end_time!r}, "
+            f"duration={self.duration}, "
+            f"row_count={self.row_count}, "
+            f"success={self.success}, "
+            f"source_schema={self.source_schema!r}, "
+            f"source_table={self.source_table!r}"
+            f")"
+        )
 
     def __str__(self) -> str:
         """String representation of the result.
