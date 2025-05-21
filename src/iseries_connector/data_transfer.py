@@ -460,7 +460,7 @@ class DataTransferManager:
                             if 'rows' in line.lower():
                                 import re
                                 # Look for patterns like "X rows" or "X row" or "X records"
-                                row_match = re.search(r'(\d+)\s*(?:row|rows|record|records)', line.lower())
+                                row_match = re.search(r'(\d+)\s*(?:row|rows|record|records|rows transferred:\s*(\d+))', line.lower())
                                 if row_match:
                                     row_count = int(row_match.group(1))
                                     break
