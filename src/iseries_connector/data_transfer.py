@@ -165,6 +165,9 @@ class DataTransferResult:
     success: bool
     error: Optional[str] = None
     file_path: Optional[str] = None
+    batch_start_time: Optional[datetime] = None
+    batch_end_time: Optional[datetime] = None
+    batch_duration: Optional[float] = None
 
     def __post_init__(self) -> None:
         """Validate the result data after initialization.
@@ -208,7 +211,10 @@ class DataTransferResult:
             'error': self.error,
             'file_path': self.file_path,
             'source_schema': self.source_schema,
-            'source_table': self.source_table
+            'source_table': self.source_table,
+            'batch_start_time': self.batch_start_time.isoformat() if self.batch_start_time else None,
+            'batch_end_time': self.batch_end_time.isoformat() if self.batch_end_time else None,
+            'batch_duration': self.batch_duration
         }
 
     @classmethod
@@ -235,7 +241,10 @@ class DataTransferResult:
                 error=data.get('error'),
                 file_path=data.get('file_path'),
                 source_schema=str(data['source_schema']),
-                source_table=str(data['source_table'])
+                source_table=str(data['source_table']),
+                batch_start_time=datetime.fromisoformat(data['batch_start_time']) if data['batch_start_time'] else None,
+                batch_end_time=datetime.fromisoformat(data['batch_end_time']) if data['batch_end_time'] else None,
+                batch_duration=float(data['batch_duration']) if data['batch_duration'] else None
             )
         except (KeyError, ValueError) as e:
             raise ValidationError(f"Invalid data format: {str(e)}")
@@ -627,3 +636,85 @@ class DataTransferManager:
             # Wait between batches if not the last batch
             if i + self.config.batch_size < len(dtfx_files):
                 time.sleep(15)  # Wait 15 seconds between batches 
+
+    def execute_transfers(
+        self,
+        source_schema: Union[str, List[str]],
+        source_table: Union[str, List[str]],
+        sql_statement: Union[str, List[str]],
+        output_directory: Optional[str] = None,
+        return_dataframe: bool = False
+    ) -> Union[List[DataTransferResult], pd.DataFrame]:
+        """Execute data transfers and collect all results.
+        
+        This is a convenience method that executes the transfer_data generator and collects
+        all results. It can return either a list of DataTransferResult objects or a pandas
+        DataFrame containing all results.
+        
+        Args:
+            source_schema: Source schema name or list of schema names
+            source_table: Source table name or list of table names
+            sql_statement: SQL statement or list of SQL statements
+            output_directory: Optional output directory (defaults to config)
+            return_dataframe: If True, returns results as a pandas DataFrame (default: False)
+            
+        Returns:
+            Union[List[DataTransferResult], pd.DataFrame]: List of transfer results or DataFrame
+            
+        Raises:
+            ConfigurationError: If there's an error in the configuration
+            ValidationError: If the transfer fails
+            
+        Examples:
+            # Execute transfers and get list of results
+            results = dtm.execute_transfers(
+                source_schema=["SCHEMA1", "SCHEMA2"],
+                source_table=["TABLE1", "TABLE2"],
+                sql_statement=["SELECT * FROM SCHEMA1.TABLE1", "SELECT * FROM SCHEMA2.TABLE2"]
+            )
+            
+            # Check results
+            for result in results:
+                if result.is_successful:
+                    print(f"Successfully transferred {result.row_count} rows to {result.file_path}")
+                else:
+                    print(f"Transfer failed: {result.error}")
+            
+            # Execute transfers and get DataFrame
+            df = dtm.execute_transfers(
+                source_schema=["SCHEMA1", "SCHEMA2"],
+                source_table=["TABLE1", "TABLE2"],
+                sql_statement=["SELECT * FROM SCHEMA1.TABLE1", "SELECT * FROM SCHEMA2.TABLE2"],
+                return_dataframe=True
+            )
+            
+            # Analyze results
+            print(f"Total successful transfers: {df[df['success']].shape[0]}")
+            print(f"Total rows transferred: {df['row_count'].sum()}")
+        """
+        batch_start_time = datetime.now()
+        
+        results = list(self.transfer_data(
+            source_schema=source_schema,
+            source_table=source_table,
+            sql_statement=sql_statement,
+            output_directory=output_directory
+        ))
+        
+        batch_end_time = datetime.now()
+        batch_duration = (batch_end_time - batch_start_time).total_seconds()
+        
+        # Add batch timing information to each result
+        for result in results:
+            result.batch_start_time = batch_start_time
+            result.batch_end_time = batch_end_time
+            result.batch_duration = batch_duration
+        
+        if return_dataframe:
+            df = pd.concat([result.to_dataframe() for result in results], ignore_index=True)
+            # Add batch timing information to DataFrame
+            df['batch_start_time'] = batch_start_time
+            df['batch_end_time'] = batch_end_time
+            df['batch_duration'] = batch_duration
+            return df
+        return results 
