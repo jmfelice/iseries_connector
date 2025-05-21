@@ -431,6 +431,7 @@ class DataTransferManager:
             
             # Replace parameters in the template
             replacements = {
+                '{{database}}': self.config.database,
                 '{{local_raw_data_directory}}': self.config.local_raw_data_directory,
                 '{{local_data_package_directory}}': self.config.local_data_package_directory,
                 '{{source_schema}}': source_schema,

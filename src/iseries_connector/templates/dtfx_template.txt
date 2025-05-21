@@ -1,7 +1,7 @@
 [DataTransferFrom]
 DataTransferVersion=1.0
 [HostInfo]
-Database=*SYSBAS
+Database={{database}}
 HostFile= {{source_schema}}/{{source_table}}
 HostName={{host_name}}
 [ClientInfo]
