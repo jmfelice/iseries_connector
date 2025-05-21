@@ -21,6 +21,8 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
     'sphinx.ext.githubpages',
+    'sphinx.ext.autosummary',
+    'sphinx.ext.doctest'
 ]
 
 templates_path = ['_templates']
@@ -45,6 +47,13 @@ html_theme_options = {
     'show_related': True,
     'sidebar_collapse': True,
     'description': 'iSeries Connector - A Python package for iSeries services integration',
+    
+    'navigation_depth': 4,
+    'titles_only': False,
+    'display_version': True,
+    'prev_next_buttons_location': 'both',
+    'style_external_links': True,
+    'style_nav_header_background': '#2980B9'
 }
 
 # -- Extension configuration -------------------------------------------------
@@ -68,6 +77,7 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'pandas': ('https://pandas.pydata.org/docs/', None),
     'pyodbc': ('https://github.com/mkleehammer/pyodbc/wiki', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
 }
 
 # Autodoc settings
@@ -76,8 +86,13 @@ autodoc_default_options = {
     'member-order': 'bysource',
     'special-members': '__init__',
     'undoc-members': True,
-    'exclude-members': '__weakref__'
+    'exclude-members': '__weakref__',
+    'show-inheritance': True,
+    'inherited-members': True,
 }
+
+# Autosummary settings
+autosummary_generate = True
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'

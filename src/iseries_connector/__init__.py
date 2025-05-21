@@ -8,4 +8,13 @@ __version__ = '0.1.0'
 __author__ = 'Jared Felice'
 __email__ = 'jmfelice@icloud.com'
 
-__all__ = ['ISeriesConn', 'ISeriesConfig', 'ISeriesConnectorError', 'ConnectionError', 'QueryError', 'DataTransferConfig', 'DataTransferResult', 'DataTransferManager']
+__all__ = [
+    'ISeriesConn', 
+    'ISeriesConfig', 
+    'ISeriesConnectorError', 
+    'ConnectionError', 
+    'QueryError', 
+    'DataTransferConfig', 
+    'DataTransferResult', 
+    'DataTransferManager'
+    ]

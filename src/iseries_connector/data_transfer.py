@@ -47,14 +47,31 @@ from .exceptions import (
 class DataTransferConfig:
     """Configuration for data transfer operations.
     
-    Attributes:
-        host_name: The hostname of the iSeries system
-        database: The database name (default: *SYSBAS)
-        acs_launcher_path: Path to the ACS Launcher executable
-        batch_size: Number of concurrent transfers (default: 15)
-        template_path: Path to the DTFX template file (default: uses built-in template)
-        local_raw_data_directory: Base directory for raw data files
-        local_data_package_directory: Base directory for DTFX files
+    This class can be initialized with direct values or from environment variables.
+    Environment variables take precedence over direct values.
+    
+    Environment Variables:
+        ISERIES_HOST_NAME: The hostname of the iSeries system
+        ISERIES_DATABASE: The database name (default: *SYSBAS)
+        ISERIES_ACS_LAUNCHER_PATH: Path to the ACS Launcher executable
+        ISERIES_BATCH_SIZE: Number of concurrent transfers
+        ISERIES_TEMPLATE_PATH: Path to the DTFX template file
+        ISERIES_RAW_DATA_DIR: Base directory for raw data files
+        ISERIES_DATA_PACKAGE_DIR: Base directory for DTFX files
+    
+    Examples:
+    
+        # Direct initialization
+        config = DataTransferConfig(
+            host_name="your.hostname.com",
+            acs_launcher_path="C:/Program Files/IBMiAccess_v1r1/Start_Programs/Windows_x86-64/acslaunch_win-64.exe"
+        )
+
+        # From environment variables
+        config = DataTransferConfig.from_env()
+
+        # Mixed initialization
+        config = DataTransferConfig(host_name="your.hostname.com").from_env()
     """
     host_name: str
     database: str = "*SYSBAS"
@@ -64,13 +81,46 @@ class DataTransferConfig:
     local_raw_data_directory: Optional[str] = None
     local_data_package_directory: Optional[str] = None
 
-    def __post_init__(self):
-        """Validate configuration after initialization."""
+    @classmethod
+    def from_env(cls) -> 'DataTransferConfig':
+        """Create a configuration from environment variables.
+        
+        Returns:
+            DataTransferConfig: A new configuration instance
+            
+        Raises:
+            ValueError: If required environment variables are missing
+        """
+        return cls(
+            host_name=os.environ.get('ISERIES_HOST_NAME', ''),
+            database=os.environ.get('ISERIES_DATABASE', '*SYSBAS'),
+            acs_launcher_path=os.environ.get(
+                'ISERIES_ACS_LAUNCHER_PATH',
+                "C:/Program Files/IBMiAccess_v1r1/Start_Programs/Windows_x86-64/acslaunch_win-64.exe"
+            ),
+            batch_size=int(os.environ.get('ISERIES_BATCH_SIZE', '15')),
+            template_path=os.environ.get('ISERIES_TEMPLATE_PATH'),
+            local_raw_data_directory=os.environ.get('ISERIES_RAW_DATA_DIR'),
+            local_data_package_directory=os.environ.get('ISERIES_DATA_PACKAGE_DIR')
+        )
+
+    def validate(self) -> None:
+        """Validate the configuration parameters.
+        
+        Raises:
+            ValidationError: If any required parameters are missing or invalid
+        """
         if not self.host_name:
-            raise ConfigurationError("Host name is required")
+            raise ValidationError("Host name is required")
         
         if not os.path.exists(self.acs_launcher_path):
-            raise ConfigurationError(f"ACS Launcher not found at: {self.acs_launcher_path}")
+            raise ValidationError(f"ACS Launcher not found at: {self.acs_launcher_path}")
+        
+        if self.batch_size <= 0:
+            raise ValidationError("Batch size must be a positive number")
+        
+        if self.template_path and not os.path.exists(self.template_path):
+            raise ValidationError(f"Template file not found: {self.template_path}")
         
         # Set default paths if not provided
         if not self.local_raw_data_directory:
@@ -82,6 +132,10 @@ class DataTransferConfig:
         # Create directories if they don't exist
         os.makedirs(self.local_raw_data_directory, exist_ok=True)
         os.makedirs(self.local_data_package_directory, exist_ok=True)
+
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        self.validate()
 
 @dataclass
 class DataTransferResult:
@@ -108,8 +162,12 @@ class DataTransferResult:
 
     @property
     def is_successful(self) -> bool:
-        """Check if the transfer was successful."""
-        return self.success and self.row_count is not None
+        """Check if the transfer was successful.
+        
+        A transfer is considered successful if the process completed without errors,
+        regardless of whether the row count was captured.
+        """
+        return self.success
 
 class DataTransferManager:
     """Manages data transfer operations using DTFX files.
@@ -117,33 +175,68 @@ class DataTransferManager:
     This class provides methods to create and execute data transfers from IBM iSeries
     systems using the IBM Access Client Solutions Data Transfer feature.
     
-    Example:
-    
-        # Create a data transfer manager
-        dtm = DataTransferManager(DataTransferConfig(
-            host_name="your.hostname.com"
-        ))
-        
-        # Transfer data from a table
-        result = dtm.transfer_data(
+    Examples:
+        # Create a data transfer manager with direct configuration
+        dtm = DataTransferManager(
             host_name="your.hostname.com",
+            acs_launcher_path="C:/Program Files/IBMiAccess_v1r1/Start_Programs/Windows_x86-64/acslaunch_win-64.exe"
+        )
+        
+        # Create a data transfer manager using environment variables
+        dtm = DataTransferManager(
+            host_name=os.environ.get('ISERIES_HOST_NAME'),
+            acs_launcher_path=os.environ.get('ISERIES_ACS_LAUNCHER_PATH')
+        )
+        
+        # Transfer data from a single table
+        result = next(dtm.transfer_data(
             source_schema="SCHEMA",
             source_table="TABLE",
             sql_statement="SELECT * FROM SCHEMA.TABLE"
-        )
+        ))
         
         if result.is_successful:
-            print(f"Transferred {result.row_count} rows")
+            print(f"Transferred {result.row_count} rows to {result.file_path}")
             
+        # Transfer data with custom output directory
+        result = next(dtm.transfer_data(
+            source_schema="SCHEMA",
+            source_table="TABLE",
+            sql_statement="SELECT * FROM SCHEMA.TABLE",
+            output_directory="C:/custom/output/path"
+        ))
     """
     
-    def __init__(self, config: DataTransferConfig):
+    def __init__(
+        self,
+        host_name: str,
+        acs_launcher_path: str = "C:/Program Files/IBMiAccess_v1r1/Start_Programs/Windows_x86-64/acslaunch_win-64.exe",
+        database: str = "*SYSBAS",
+        batch_size: int = 15,
+        template_path: Optional[str] = None,
+        local_raw_data_directory: Optional[str] = None,
+        local_data_package_directory: Optional[str] = None
+    ):
         """Initialize the data transfer manager.
         
         Args:
-            config: Configuration for data transfer operations
+            host_name: The hostname of the iSeries system
+            acs_launcher_path: Path to the ACS Launcher executable
+            database: The database name (default: *SYSBAS)
+            batch_size: Number of concurrent transfers (default: 15)
+            template_path: Path to the DTFX template file (default: uses built-in template)
+            local_raw_data_directory: Base directory for raw data files
+            local_data_package_directory: Base directory for DTFX files
         """
-        self.config = config
+        self.config = DataTransferConfig(
+            host_name=host_name,
+            acs_launcher_path=acs_launcher_path,
+            database=database,
+            batch_size=batch_size,
+            template_path=template_path,
+            local_raw_data_directory=local_raw_data_directory,
+            local_data_package_directory=local_data_package_directory
+        )
         self._validate_config()
     
     def _validate_config(self) -> None:
@@ -245,7 +338,6 @@ class DataTransferManager:
             
         Examples:
             Single transfer:
-            ```python
             # Transfer data from a single table
             result = next(dtm.transfer_data(
                 source_schema="SCHEMA",
@@ -255,10 +347,8 @@ class DataTransferManager:
             
             if result.is_successful:
                 print(f"Transferred {result.row_count} rows to {result.file_path}")
-            ```
             
             Batch transfer:
-            ```python
             # Transfer data from multiple tables in parallel
             schemas = ["SCHEMA1", "SCHEMA2", "SCHEMA3"]
             tables = ["TABLE1", "TABLE2", "TABLE3"]
@@ -278,10 +368,8 @@ class DataTransferManager:
                     print(f"Successfully transferred {result.row_count} rows to {result.file_path}")
                 else:
                     print(f"Transfer failed: {result.error}")
-            ```
             
             Custom output directory:
-            ```python
             # Transfer to a specific output directory
             result = next(dtm.transfer_data(
                 source_schema="SCHEMA",
@@ -289,7 +377,20 @@ class DataTransferManager:
                 sql_statement="SELECT * FROM SCHEMA.TABLE",
                 output_directory="C:/custom/output/path"
             ))
-            ```
+            
+            Using environment variables:
+            # Create manager using environment variables
+            dtm = DataTransferManager(
+                host_name=os.environ.get('ISERIES_HOST_NAME'),
+                acs_launcher_path=os.environ.get('ISERIES_ACS_LAUNCHER_PATH')
+            )
+            
+            # Transfer data
+            result = next(dtm.transfer_data(
+                source_schema="SCHEMA",
+                source_table="TABLE",
+                sql_statement="SELECT * FROM SCHEMA.TABLE"
+            ))
         """
         # Convert single values to lists for consistent processing
         schemas = [source_schema] if isinstance(source_schema, str) else source_schema
@@ -329,14 +430,15 @@ class DataTransferManager:
             
             # Start all transfers in the batch concurrently
             for dtfx_path, schema, table in batch:
-                command = f'start "" "{self.config.acs_launcher_path}" /PLUGIN=download "{dtfx_path}"'
+                command = f'"{self.config.acs_launcher_path}" /PLUGIN=download "{dtfx_path}"'
                 process = subprocess.Popen(
                     command,
                     shell=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    encoding='utf-8'
+                    encoding='utf-8',
+                    creationflags=subprocess.CREATE_NO_WINDOW  # Prevent window from showing
                 )
                 processes.append((dtfx_path, schema, table, process))
             
@@ -344,20 +446,24 @@ class DataTransferManager:
             for dtfx_path, schema, table, process in processes:
                 start_time = datetime.now()
                 try:
+                    # Add a small delay to ensure output is captured
+                    time.sleep(1)
                     stdout, stderr = process.communicate()
                     end_time = datetime.now()
                     duration = (end_time - start_time).total_seconds()
                     success = process.returncode == 0
                     
-                    # Extract row count from output
+                    # Extract row count from output with improved parsing
                     row_count = None
-                    for line in stdout.split('\n'):
-                        if 'rows' in line.lower():
-                            import re
-                            row_match = re.search(r'(\d+)\s*(?:row|rows)', line.lower())
-                            if row_match:
-                                row_count = int(row_match.group(1))
-                                break
+                    if stdout:
+                        for line in stdout.split('\n'):
+                            if 'rows' in line.lower():
+                                import re
+                                # Look for patterns like "X rows" or "X row" or "X records"
+                                row_match = re.search(r'(\d+)\s*(?:row|rows|record|records)', line.lower())
+                                if row_match:
+                                    row_count = int(row_match.group(1))
+                                    break
                     
                     result = DataTransferResult(
                         start_time=start_time,
