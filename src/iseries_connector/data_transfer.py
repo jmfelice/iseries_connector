@@ -36,6 +36,8 @@ from typing import Dict, List, Optional, Any, Generator, Union
 from pathlib import Path
 import importlib.resources
 import tempfile
+import json
+import pandas as pd
 
 from .exceptions import (
     ISeriesConnectorError,
@@ -150,6 +152,8 @@ class DataTransferResult:
         success: Whether the transfer was successful
         error: Error message if transfer failed
         file_path: Path to the output file
+        source_schema: The source schema name
+        source_table: The source table name
     """
     start_time: datetime
     end_time: datetime
@@ -159,6 +163,8 @@ class DataTransferResult:
     success: bool
     error: Optional[str] = None
     file_path: Optional[str] = None
+    source_schema: str
+    source_table: str
 
     @property
     def is_successful(self) -> bool:
@@ -168,6 +174,55 @@ class DataTransferResult:
         regardless of whether the row count was captured.
         """
         return self.success
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Convert the result to a pandas DataFrame.
+        
+        Returns:
+            pd.DataFrame: A single-row DataFrame containing the result data
+        """
+        data = {
+            'start_time': [self.start_time],
+            'end_time': [self.end_time],
+            'duration': [self.duration],
+            'row_count': [self.row_count],
+            'success': [self.success],
+            'error': [self.error],
+            'file_path': [self.file_path],
+            'source_schema': [self.source_schema],
+            'source_table': [self.source_table]
+        }
+        return pd.DataFrame(data)
+
+    def to_json(self, indent: int = 2) -> str:
+        """Convert the result to a JSON string.
+        
+        Args:
+            indent: Number of spaces for indentation (default: 2)
+            
+        Returns:
+            str: JSON string representation of the result
+        """
+        data = {
+            'start_time': self.start_time.isoformat(),
+            'end_time': self.end_time.isoformat(),
+            'duration': self.duration,
+            'row_count': self.row_count,
+            'success': self.success,
+            'error': self.error,
+            'file_path': self.file_path,
+            'source_schema': self.source_schema,
+            'source_table': self.source_table
+        }
+        return json.dumps(data, indent=indent)
+
+    def __str__(self) -> str:
+        """String representation of the result.
+        
+        Returns:
+            str: Formatted string representation
+        """
+        return self.to_json()
 
 class DataTransferManager:
     """Manages data transfer operations using DTFX files.
@@ -460,7 +515,7 @@ class DataTransferManager:
                             if 'rows' in line.lower():
                                 import re
                                 # Look for patterns like "X rows" or "X row" or "X records"
-                                row_match = re.search(r'(\d+)\s*(?:row|rows|record|records|rows transferred:\s*(\d+))', line.lower())
+                                row_match = re.search(r'rows transferred:\s*(\d+)', line.lower())
                                 if row_match:
                                     row_count = int(row_match.group(1))
                                     break
@@ -473,7 +528,9 @@ class DataTransferManager:
                         output=stdout,
                         success=success,
                         error=stderr if not success else None,
-                        file_path=os.path.join(output_directory, f"{schema}_{table}.csv")
+                        file_path=os.path.join(output_directory, f"{schema}_{table}.csv"),
+                        source_schema=schema,
+                        source_table=table
                     )
                     yield result
                     
@@ -488,9 +545,11 @@ class DataTransferManager:
                         output=None,
                         success=False,
                         error=str(e),
-                        file_path=dtfx_path
+                        file_path=dtfx_path,
+                        source_schema=schema,
+                        source_table=table
                     )
             
             # Wait between batches if not the last batch
             if i + self.config.batch_size < len(dtfx_files):
-                time.sleep(30)  # Wait 30 seconds between batches 
+                time.sleep(15)  # Wait 15 seconds between batches 
