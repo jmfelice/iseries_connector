@@ -32,6 +32,7 @@ from datetime import datetime
 import os
 import subprocess
 import time
+import logging
 from typing import Dict, List, Optional, Any, Generator, Union
 from pathlib import Path
 import importlib.resources
@@ -44,6 +45,10 @@ from .exceptions import (
     ConfigurationError,
     ValidationError
 )
+
+# Configure module logger
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 @dataclass
 class DataTransferConfig:
@@ -383,9 +388,13 @@ class DataTransferManager:
         Raises:
             ConfigurationError: If the configuration is invalid
         """
-        if self.config.template_path and not os.path.exists(self.config.template_path):
-            raise ConfigurationError(f"Template file not found: {self.config.template_path}")
-    
+        try:
+            if self.config.template_path and not os.path.exists(self.config.template_path):
+                raise ConfigurationError(f"Template file not found: {self.config.template_path}")
+        except Exception as e:
+            logger.error(f"Configuration validation failed: {str(e)}")
+            raise
+
     def _get_template_content(self) -> str:
         """Get the template content from either the configured path or the built-in template.
         
@@ -404,8 +413,9 @@ class DataTransferManager:
                 with importlib.resources.open_text('iseries_connector.templates', 'dtfx_template.txt') as file:
                     return file.read()
         except Exception as e:
+            logger.error(f"Failed to load template: {str(e)}")
             raise ConfigurationError(f"Error reading template: {str(e)}")
-    
+
     def _create_dtfx_file(
         self,
         host_name: str,
@@ -446,10 +456,12 @@ class DataTransferManager:
             # Write the DTFX file
             with open(output_path, 'w') as file:
                 file.write(template)
-                
+            logger.debug(f"Created DTFX file at {output_path}")
+            
         except Exception as e:
+            logger.error(f"Failed to create DTFX file: {str(e)}")
             raise ConfigurationError(f"Error creating DTFX file: {str(e)}")
-    
+
     def transfer_data(
         self,
         source_schema: Union[str, List[str]],
@@ -474,62 +486,6 @@ class DataTransferManager:
         Raises:
             ConfigurationError: If there's an error in the configuration
             ValidationError: If the transfer fails
-            
-        Examples:
-            Single transfer:
-            # Transfer data from a single table
-            result = next(dtm.transfer_data(
-                source_schema="SCHEMA",
-                source_table="TABLE",
-                sql_statement="SELECT * FROM SCHEMA.TABLE"
-            ))
-            
-            if result.is_successful:
-                print(f"Transferred {result.row_count} rows to {result.file_path}")
-            
-            Batch transfer:
-            # Transfer data from multiple tables in parallel
-            schemas = ["SCHEMA1", "SCHEMA2", "SCHEMA3"]
-            tables = ["TABLE1", "TABLE2", "TABLE3"]
-            sql_statements = [
-                "SELECT * FROM SCHEMA1.TABLE1",
-                "SELECT * FROM SCHEMA2.TABLE2",
-                "SELECT * FROM SCHEMA3.TABLE3"
-            ]
-            
-            # Process results as they complete
-            for result in dtm.transfer_data(
-                source_schema=schemas,
-                source_table=tables,
-                sql_statement=sql_statements
-            ):
-                if result.is_successful:
-                    print(f"Successfully transferred {result.row_count} rows to {result.file_path}")
-                else:
-                    print(f"Transfer failed: {result.error}")
-            
-            Custom output directory:
-            # Transfer to a specific output directory
-            result = next(dtm.transfer_data(
-                source_schema="SCHEMA",
-                source_table="TABLE",
-                sql_statement="SELECT * FROM SCHEMA.TABLE",
-                output_directory="C:/custom/output/path"
-            ))
-            
-            Using environment variables:
-            # Create manager using environment variables
-            dtm = DataTransferManager(
-                host_name=os.environ.get('ISERIES_HOST_NAME'),
-                acs_launcher_path=os.environ.get('ISERIES_ACS_LAUNCHER_PATH')
-            )
-            
-            # Transfer data
-            result = next(dtm.transfer_data(
-                source_schema="SCHEMA",
-                source_table="TABLE",
-                sql_statement="SELECT * FROM SCHEMA.TABLE"
-            ))
         """
         # Convert single values to lists for consistent processing
         schemas = [source_schema] if isinstance(source_schema, str) else source_schema
@@ -538,13 +494,17 @@ class DataTransferManager:
         
         # Validate lists have same length
         if not (len(schemas) == len(tables) == len(statements)):
-            raise ValidationError("source_schema, source_table, and sql_statement lists must have the same length")
-        
+            error_msg = "source_schema, source_table, and sql_statement lists must have the same length"
+            logger.error(error_msg)
+            raise ValidationError(error_msg)
+            
         # Create output directory if specified
         if output_directory:
             os.makedirs(output_directory, exist_ok=True)
         else:
             output_directory = self.config.local_raw_data_directory
+        
+        logger.info(f"Starting data transfer for {len(schemas)} tables")
         
         # Phase 1: Build all DTFX files
         dtfx_files = []
@@ -567,9 +527,12 @@ class DataTransferManager:
             batch = dtfx_files[i:i + self.config.batch_size]
             processes = []
             
+            logger.info(f"Processing batch {i//self.config.batch_size + 1} of {(len(dtfx_files) + self.config.batch_size - 1)//self.config.batch_size}")
+            
             # Start all transfers in the batch concurrently
             for dtfx_path, schema, table in batch:
                 command = f'"{self.config.acs_launcher_path}" /PLUGIN=download "{dtfx_path}"'
+                logger.debug(f"Executing command for {schema}.{table}: {command}")
                 process = subprocess.Popen(
                     command,
                     shell=True,
@@ -616,11 +579,18 @@ class DataTransferManager:
                         source_schema=schema,
                         source_table=table
                     )
+                    
+                    if success:
+                        logger.info(f"Transfer completed successfully for {schema}.{table} ({row_count} rows)")
+                    else:
+                        logger.error(f"Transfer failed for {schema}.{table}: {stderr}")
+                    
                     yield result
                     
                 except Exception as e:
                     end_time = datetime.now()
                     duration = (end_time - start_time).total_seconds()
+                    logger.error(f"Unexpected error during transfer for {schema}.{table}: {str(e)}")
                     yield DataTransferResult(
                         start_time=start_time,
                         end_time=end_time,
@@ -636,7 +606,8 @@ class DataTransferManager:
             
             # Wait between batches if not the last batch
             if i + self.config.batch_size < len(dtfx_files):
-                time.sleep(15)  # Wait 15 seconds between batches 
+                logger.info("Waiting 15 seconds before next batch...")
+                time.sleep(15)  # Wait 15 seconds between batches
 
     def execute_transfers(
         self,

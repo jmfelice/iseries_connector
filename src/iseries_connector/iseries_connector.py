@@ -13,10 +13,10 @@ from .exceptions import (
     QueryError,
     ValidationError
 )
-from .utils import setup_logging
 
-# Configure logging
-logger = setup_logging(__name__)
+# Configure module logger
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=UserWarning)
