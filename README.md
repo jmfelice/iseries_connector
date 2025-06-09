@@ -17,58 +17,98 @@ A Python library for connecting to and interacting with IBM iSeries databases. T
 ## Requirements
 
 - Python 3.9 or higher
-- IBM iSeries Access ODBC Driver
 - pyodbc 4.0.0 or higher
 - pandas 2.0.0 or higher
 
 ## Installation
 
+Clone the repository and install:
+
 ```bash
-pip install iseries-connector
+git clone https://github.com/jmfelice/iseries-connector.git
+cd iseries-connector
+python setup.py install
 ```
 
-## Quick Start
+## Quick Start Examples
 
+### 1. Basic Connection
 ```python
 from iseries_connector import ISeriesConn, ISeriesConfig
 
 # Create a configuration
 config = ISeriesConfig(
-    dsn="MY_ISERIES_DSN",
-    username="admin",
-    password="secret",
-    timeout=30,
-    max_retries=3,
-    retry_delay=5
+    dsn="MY_DSN",
+    username="user",
+    password="pass"
 )
 
-# Or use environment variables
+# Connect to the database
+with ISeriesConn(config) as conn:
+    print("Connected successfully!")
+```
+
+### 2. Fetching Data
+```python
+from iseries_connector import ISeriesConn, ISeriesConfig
+
+config = ISeriesConfig.from_env()  # Using environment variables
+
+with ISeriesConn(config) as conn:
+    # Fetch data into a pandas DataFrame
+    df = conn.fetch("SELECT * FROM SCHEMA.TABLE WHERE COLUMN = 'value'")
+    print(f"Retrieved {len(df)} rows")
+```
+
+### 3. Single Table Data Transfer
+```python
+from iseries_connector import ISeriesConn, ISeriesConfig, DataTransferTask
+
 config = ISeriesConfig.from_env()
 
-# Connect and execute queries
-with ISeriesConn(**config.__dict__) as conn:
-    # Execute a query and get results as DataFrame
-    df = conn.fetch("SELECT * FROM MYTABLE")
+with ISeriesConn(config) as conn:
+    # Create a data transfer task for a single table
+    task = DataTransferTask(
+        source_schema="SRC_SCHEMA",
+        source_table="MY_TABLE",
+        target_schema="TGT_SCHEMA"
+    )
     
-    # Execute multiple statements in parallel
-    results = conn.execute_statements([
-        "UPDATE TABLE1 SET COL1 = 'value1'",
-        "UPDATE TABLE2 SET COL2 = 'value2'"
-    ], parallel=True)
+    # Execute the transfer
+    result = conn.execute_transfer(task)
+    print(f"Transferred {result.rows_transferred} rows")
+```
+
+### 4. Multiple Tables Data Transfer
+```python
+from iseries_connector import ISeriesConn, ISeriesConfig, DataTransferTask
+
+config = ISeriesConfig.from_env()
+
+# List of tables to transfer
+tables = ["TABLE1", "TABLE2", "TABLE3"]
+
+with ISeriesConn(config) as conn:
+    for table in tables:
+        task = DataTransferTask(
+            source_schema="SRC_SCHEMA",
+            source_table=table,
+            target_schema="TGT_SCHEMA"
+        )
+        
+        result = conn.execute_transfer(task)
+        print(f"Table {table}: Transferred {result.rows_transferred} rows")
 ```
 
 ## Configuration
 
-The library can be configured using environment variables or direct initialization:
+The library can be configured using environment variables:
 
-```python
+```bash
 # Environment Variables
 ISERIES_DSN=MY_DSN
-ISERIES_USERNAME=admin
-ISERIES_PASSWORD=secret
-ISERIES_TIMEOUT=30
-ISERIES_MAX_RETRIES=3
-ISERIES_RETRY_DELAY=5
+ISERIES_USERNAME=user
+ISERIES_PASSWORD=pass
 ```
 
 ### Configuration Options
@@ -86,7 +126,7 @@ ISERIES_RETRY_DELAY=5
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/enterprise-dw/iseries-connector.git
+   git clone https://github.com/jmfelice/iseries-connector.git
    cd iseries-connector
    ```
 
@@ -97,9 +137,9 @@ ISERIES_RETRY_DELAY=5
    .\venv\Scripts\activate   # Windows
    ```
 
-3. Install development dependencies:
+3. Install for development:
    ```bash
-   pip install -e ".[dev]"
+   python setup.py develop
    ```
 
 4. Run tests:

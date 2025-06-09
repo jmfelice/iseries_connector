@@ -17,7 +17,6 @@ Features
 * Configurable through environment variables or direct initialization
 * Comprehensive error handling and logging
 * Full type hints and documentation
-* Efficient data transfer using IBM Access Client Solutions
 * Connection pooling and resource management
 * Asynchronous query execution support
 * Comprehensive test coverage
@@ -25,52 +24,100 @@ Features
 Installation
 -----------
 
-You can install iSeries Connector using pip:
+Clone the repository and install:
 
 .. code-block:: bash
 
-   pip install iseries-connector
+   git clone https://github.com/jmfelice/iseries-connector.git
+   cd iseries-connector
+   python setup.py install
 
 For development installation:
 
 .. code-block:: bash
 
-   git clone https://github.com/jmfelice/iseries_connector.git
+   git clone https://github.com/jmfelice/iseries-connector.git
    cd iseries_connector
-   pip install -e ".[dev]"
+   python setup.py develop
 
-Quick Start
-----------
+Quick Start Examples
+------------------
 
-Here's a quick example of how to use iSeries Connector:
+1. Basic Connection
+~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
    from iseries_connector import ISeriesConn, ISeriesConfig
-   from typing import List, Dict, Any
 
    # Create a configuration
    config = ISeriesConfig(
-       dsn="MY_ISERIES_DSN",
-       username="admin",
-       password="secret",
-       timeout=30,
-       max_retries=3
+       dsn="MY_DSN",
+       username="user",
+       password="pass"
    )
 
-   # Or use environment variables
+   # Connect to the database
+   with ISeriesConn(config) as conn:
+       print("Connected successfully!")
+
+2. Fetching Data
+~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from iseries_connector import ISeriesConn, ISeriesConfig
+
+   config = ISeriesConfig.from_env()  # Using environment variables
+
+   with ISeriesConn(config) as conn:
+       # Fetch data into a pandas DataFrame
+       df = conn.fetch("SELECT * FROM SCHEMA.TABLE WHERE COLUMN = 'value'")
+       print(f"Retrieved {len(df)} rows")
+
+3. Single Table Data Transfer
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from iseries_connector import ISeriesConn, ISeriesConfig, DataTransferTask
+
    config = ISeriesConfig.from_env()
 
-   # Connect and execute queries
-   with ISeriesConn(**config.__dict__) as conn:
-       # Execute a query and get results as DataFrame
-       df = conn.fetch("SELECT * FROM MYTABLE")
+   with ISeriesConn(config) as conn:
+       # Create a data transfer task for a single table
+       task = DataTransferTask(
+           source_schema="SRC_SCHEMA",
+           source_table="MY_TABLE",
+           target_schema="TGT_SCHEMA"
+       )
        
-       # Execute multiple statements in parallel
-       results: List[Dict[str, Any]] = conn.execute_statements([
-           "UPDATE TABLE1 SET COL1 = 'value1'",
-           "UPDATE TABLE2 SET COL2 = 'value2'"
-       ], parallel=True)
+       # Execute the transfer
+       result = conn.execute_transfer(task)
+       print(f"Transferred {result.rows_transferred} rows")
+
+4. Multiple Tables Data Transfer
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from iseries_connector import ISeriesConn, ISeriesConfig, DataTransferTask
+
+   config = ISeriesConfig.from_env()
+
+   # List of tables to transfer
+   tables = ["TABLE1", "TABLE2", "TABLE3"]
+
+   with ISeriesConn(config) as conn:
+       for table in tables:
+           task = DataTransferTask(
+               source_schema="SRC_SCHEMA",
+               source_table=table,
+               target_schema="TGT_SCHEMA"
+           )
+           
+           result = conn.execute_transfer(task)
+           print(f"Table {table}: Transferred {result.rows_transferred} rows")
 
 Configuration
 ------------
