@@ -1,6 +1,6 @@
 """iSeries Connector - A Python library for connecting to and interacting with IBM iSeries databases."""
 
-from .iseries_connector import ISeriesConn, ISeriesConfig
+from .iseries_connector import ISeriesConn, ISeriesConfig, load_env
 from .data_transfer import DataTransferConfig, DataTransferManager, DataTransferResult
 from .exceptions import ISeriesConnectorError, ConnectionError, QueryError, ValidationError
 
@@ -9,13 +9,14 @@ __author__ = 'Jared Felice'
 __email__ = 'jmfelice@icloud.com'
 
 __all__ = [
-    'ISeriesConn', 
-    'ISeriesConfig', 
-    'ISeriesConnectorError', 
-    'ConnectionError', 
-    'QueryError', 
-    'DataTransferConfig', 
-    'DataTransferResult', 
+    'ISeriesConn',
+    'ISeriesConfig',
+    'load_env',
+    'ISeriesConnectorError',
+    'ConnectionError',
+    'QueryError',
+    'DataTransferConfig',
+    'DataTransferResult',
     'DataTransferManager',
-    'ValidationError'
-    ]
+    'ValidationError',
+]

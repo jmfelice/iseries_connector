@@ -8,10 +8,10 @@ version = "0.2.0"
 description = "A Python library for connecting to and interacting with IBM iSeries databases"
 readme = "README.md"
 authors = [
-  {name = "Enterprise DW", email = "enterprise.dw@example.com"}
+  {name = "Jared Felice", email = "jmfelice@icloud.com"}
 ]
 maintainers = [
-  {name = "Enterprise DW", email = "enterprise.dw@example.com"}
+  {name = "Jared Felice", email = "jmfelice@icloud.com"}
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -46,9 +46,9 @@ dev = [
 ]
 
 [project.urls]
-bugs = "https://github.com/enterprise-dw/iseries-connector/issues"
-changelog = "https://github.com/enterprise-dw/iseries-connector/blob/master/changelog.md"
-homepage = "https://github.com/enterprise-dw/iseries-connector"
+bugs = "https://github.com/jmfelice/iseries_connector/issues"
+changelog = "https://github.com/jmfelice/iseries_connector/blob/master/CHANGELOG.md"
+homepage = "https://github.com/jmfelice/iseries_connector"
 documentation = "https://iseries-connector.readthedocs.io/"
 
 [tool.setuptools]

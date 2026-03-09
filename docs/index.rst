@@ -23,21 +23,19 @@ Features
 Installation
 -----------
 
-Clone the repository and install:
+Install from PyPI (recommended):
+
+.. code-block:: bash
+
+   pip install iseries-connector
+
+For development from source:
 
 .. code-block:: bash
 
    git clone https://github.com/jmfelice/iseries-connector.git
    cd iseries-connector
-   python setup.py install
-
-For development installation:
-
-.. code-block:: bash
-
-   git clone https://github.com/jmfelice/iseries-connector.git
-   cd iseries_connector
-   python setup.py develop
+   pip install -e .[dev]
 
 Quick Start Examples
 ------------------
@@ -53,18 +51,11 @@ Quick Start Examples
    config = ISeriesConfig(
        dsn="MY_DSN",
        username="user",
-       password="pass"
+       password="pass",
    )
 
    # Connect to the database
-   with ISeriesConn(
-       dsn=config.dsn,
-       username=config.username,
-       password=config.password,
-       timeout=config.timeout,
-       max_retries=config.max_retries,
-       retry_delay=config.retry_delay,
-   ) as conn:
+   with ISeriesConn(config=config) as conn:
        print("Connected successfully!")
 
 2. Fetching Data
@@ -74,16 +65,10 @@ Quick Start Examples
 
    from iseries_connector import ISeriesConn, ISeriesConfig
 
-   config = ISeriesConfig.from_env()  # Using environment variables
+   # Using environment variables / .env
+   config = ISeriesConfig.from_env()
 
-   with ISeriesConn(
-       dsn=config.dsn,
-       username=config.username,
-       password=config.password,
-       timeout=config.timeout,
-       max_retries=config.max_retries,
-       retry_delay=config.retry_delay,
-   ) as conn:
+   with ISeriesConn(config=config) as conn:
        # Fetch data into a pandas DataFrame
        df = conn.fetch("SELECT * FROM SCHEMA.TABLE WHERE COLUMN = 'value'")
        print(f"Retrieved {len(df)} rows")
@@ -97,14 +82,7 @@ Quick Start Examples
 
    config = ISeriesConfig.from_env()
 
-   with ISeriesConn(
-       dsn=config.dsn,
-       username=config.username,
-       password=config.password,
-       timeout=config.timeout,
-       max_retries=config.max_retries,
-       retry_delay=config.retry_delay,
-   ) as conn:
+   with ISeriesConn(config=config) as conn:
        # Single statement
        conn.execute_statements("UPDATE table1 SET col1 = 'value1'")
 
@@ -127,14 +105,7 @@ Quick Start Examples
 
    config = ISeriesConfig.from_env()
 
-   with ISeriesConn(
-       dsn=config.dsn,
-       username=config.username,
-       password=config.password,
-       timeout=config.timeout,
-       max_retries=config.max_retries,
-       retry_delay=config.retry_delay,
-   ) as conn:
+   with ISeriesConn(config=config) as conn:
        # Single file, statements executed sequentially
        conn.execute_statements_from_files("sql/setup.sql")
 
@@ -159,14 +130,7 @@ Quick Start Examples
 
    config = ISeriesConfig.from_env()
 
-   with ISeriesConn(
-       dsn=config.dsn,
-       username=config.username,
-       password=config.password,
-       timeout=config.timeout,
-       max_retries=config.max_retries,
-       retry_delay=config.retry_delay,
-   ) as conn:
+   with ISeriesConn(config=config) as conn:
        # The file must contain exactly one SQL query
        df = conn.fetch_from_file("sql/top_customers.sql")
        print(f"Retrieved {len(df)} rows")

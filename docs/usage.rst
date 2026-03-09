@@ -20,7 +20,7 @@ Here's a basic example of how to connect to an iSeries database and execute a qu
    )
 
    # Connect and execute a query
-   with ISeriesConn(**config.__dict__) as conn:
+   with ISeriesConn(config=config) as conn:
        df = conn.fetch("SELECT * FROM MYTABLE")
        print(df.head())
 
@@ -31,18 +31,9 @@ You can also configure the connection using environment variables:
 
 .. code-block:: python
 
-   import os
    from iseries_connector import ISeriesConfig
 
-   # Set environment variables
-   os.environ['ISERIES_DSN'] = 'MY_DSN'
-   os.environ['ISERIES_USERNAME'] = 'admin'
-   os.environ['ISERIES_PASSWORD'] = 'secret'
-   os.environ['ISERIES_TIMEOUT'] = '30'
-   os.environ['ISERIES_MAX_RETRIES'] = '3'
-   os.environ['ISERIES_RETRY_DELAY'] = '5'
-
-   # Create configuration from environment
+   # Create configuration from environment variables (and optional .env file)
    config = ISeriesConfig.from_env()
 
 Executing Multiple Statements
@@ -60,7 +51,7 @@ You can execute multiple SQL statements either sequentially or in parallel:
        password="secret"
    )
 
-   with ISeriesConn(**config.__dict__) as conn:
+   with ISeriesConn(config=config) as conn:
        # Sequential execution
        results = conn.execute_statements([
            "UPDATE TABLE1 SET COL1 = 'value1'",
@@ -96,7 +87,7 @@ For large datasets, you can use chunking to process the data in smaller batches:
        password="secret"
    )
 
-   with ISeriesConn(**config.__dict__) as conn:
+   with ISeriesConn(config=config) as conn:
        # Process data in chunks of 1000 rows
        for chunk in conn.fetch("SELECT * FROM LARGE_TABLE", chunksize=1000):
            # Process each chunk
@@ -112,14 +103,10 @@ The library provides comprehensive error handling:
    from iseries_connector import ISeriesConn, ISeriesConfig
    from iseries_connector.exceptions import ConnectionError, QueryError
 
-   config = ISeriesConfig(
-       dsn="MY_DSN",
-       username="admin",
-       password="secret"
-   )
+   config = ISeriesConfig.from_env()
 
    try:
-       with ISeriesConn(**config.__dict__) as conn:
+       with ISeriesConn(config=config) as conn:
            df = conn.fetch("SELECT * FROM MYTABLE")
    except ConnectionError as e:
        print(f"Connection error: {e}")
@@ -139,13 +126,9 @@ The library includes built-in logging support:
    # Configure logging
    logging.basicConfig(level=logging.INFO)
 
-   config = ISeriesConfig(
-       dsn="MY_DSN",
-       username="admin",
-       password="secret"
-   )
+   config = ISeriesConfig.from_env()
 
    # Enable query echoing
-   with ISeriesConn(**config.__dict__) as conn:
+   with ISeriesConn(config=config) as conn:
        conn.echo = True
        df = conn.fetch("SELECT * FROM MYTABLE") 

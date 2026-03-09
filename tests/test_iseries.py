@@ -4,7 +4,7 @@ import pytest
 import os
 from unittest.mock import Mock, patch
 import pandas as pd
-from iseries_connector import ISeriesConn, ISeriesConfig
+from iseries_connector import ISeriesConn, ISeriesConfig, load_env
 from iseries_connector.exceptions import (
     ConnectionError,
     ISeriesConnectorError,
@@ -81,6 +81,59 @@ class TestISeriesConfig:
             assert config.timeout == 20
             assert config.max_retries == 5
             assert config.retry_delay == 10
+
+
+class TestEnvLoading:
+    def test_load_env_from_default_file(self, tmp_path, monkeypatch):
+        """load_env should populate os.environ from a .env file in CWD."""
+        dotenv_path = tmp_path / ".env"
+        dotenv_path.write_text(
+            "ISERIES_DSN=DOTENV_DSN\n"
+            "ISERIES_USERNAME=dotenv-user\n"
+            "ISERIES_PASSWORD=dotenv-pass\n"
+        )
+
+        monkeypatch.chdir(tmp_path)
+        for key in ("ISERIES_DSN", "ISERIES_USERNAME", "ISERIES_PASSWORD"):
+            monkeypatch.delenv(key, raising=False)
+
+        load_env()
+
+        assert os.environ["ISERIES_DSN"] == "DOTENV_DSN"
+        assert os.environ["ISERIES_USERNAME"] == "dotenv-user"
+        assert os.environ["ISERIES_PASSWORD"] == "dotenv-pass"
+
+    def test_from_env_uses_dotenv_when_env_missing(self, tmp_path, monkeypatch):
+        """.from_env should fall back to values from a .env file."""
+        dotenv_path = tmp_path / ".env"
+        dotenv_path.write_text(
+            "ISERIES_DSN=DOTENV_DSN\n"
+            "ISERIES_USERNAME=dotenv-user\n"
+            "ISERIES_PASSWORD=dotenv-pass\n"
+            "ISERIES_TIMEOUT=15\n"
+            "ISERIES_MAX_RETRIES=7\n"
+            "ISERIES_RETRY_DELAY=2\n"
+        )
+
+        monkeypatch.chdir(tmp_path)
+        for key in (
+            "ISERIES_DSN",
+            "ISERIES_USERNAME",
+            "ISERIES_PASSWORD",
+            "ISERIES_TIMEOUT",
+            "ISERIES_MAX_RETRIES",
+            "ISERIES_RETRY_DELAY",
+        ):
+            monkeypatch.delenv(key, raising=False)
+
+        config = ISeriesConfig.from_env()
+
+        assert config.dsn == "DOTENV_DSN"
+        assert config.username == "dotenv-user"
+        assert config.password == "dotenv-pass"
+        assert config.timeout == 15
+        assert config.max_retries == 7
+        assert config.retry_delay == 2
 
     @pytest.mark.parametrize(
         "invalid_field,invalid_value,expected_error",

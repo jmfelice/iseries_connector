@@ -18,15 +18,21 @@ A Python library for connecting to and interacting with IBM iSeries databases. T
 - Python 3.9 or higher
 - pyodbc 4.0.0 or higher
 - pandas 2.0.0 or higher
-
+ 
 ## Installation
 
-Clone the repository and install:
+### From PyPI (recommended)
+
+```bash
+pip install iseries-connector
+```
+
+### From source
 
 ```bash
 git clone https://github.com/jmfelice/iseries-connector.git
 cd iseries-connector
-python setup.py install
+pip install -e .[dev]
 ```
 
 ## Quick Start Examples
@@ -39,18 +45,11 @@ from iseries_connector import ISeriesConn, ISeriesConfig
 config = ISeriesConfig(
     dsn="MY_DSN",
     username="user",
-    password="pass"
+    password="pass",
 )
 
 # Connect to the database
-with ISeriesConn(
-    dsn=config.dsn,
-    username=config.username,
-    password=config.password,
-    timeout=config.timeout,
-    max_retries=config.max_retries,
-    retry_delay=config.retry_delay,
-) as conn:
+with ISeriesConn(config=config) as conn:
     print("Connected successfully!")
 ```
 
@@ -58,16 +57,10 @@ with ISeriesConn(
 ```python
 from iseries_connector import ISeriesConn, ISeriesConfig
 
-config = ISeriesConfig.from_env()  # Using environment variables
+# Load configuration from environment variables (and optional .env file)
+config = ISeriesConfig.from_env()
 
-with ISeriesConn(
-    dsn=config.dsn,
-    username=config.username,
-    password=config.password,
-    timeout=config.timeout,
-    max_retries=config.max_retries,
-    retry_delay=config.retry_delay,
-) as conn:
+with ISeriesConn(config=config) as conn:
     # Fetch data into a pandas DataFrame
     df = conn.fetch("SELECT * FROM SCHEMA.TABLE WHERE COLUMN = 'value'")
     print(f"Retrieved {len(df)} rows")
@@ -79,14 +72,7 @@ from iseries_connector import ISeriesConn, ISeriesConfig
 
 config = ISeriesConfig.from_env()
 
-with ISeriesConn(
-    dsn=config.dsn,
-    username=config.username,
-    password=config.password,
-    timeout=config.timeout,
-    max_retries=config.max_retries,
-    retry_delay=config.retry_delay,
-) as conn:
+with ISeriesConn(config=config) as conn:
     # Single statement
     conn.execute_statements("UPDATE table1 SET col1 = 'value1'")
 
@@ -107,14 +93,7 @@ from iseries_connector import ISeriesConn, ISeriesConfig
 
 config = ISeriesConfig.from_env()
 
-with ISeriesConn(
-    dsn=config.dsn,
-    username=config.username,
-    password=config.password,
-    timeout=config.timeout,
-    max_retries=config.max_retries,
-    retry_delay=config.retry_delay,
-) as conn:
+with ISeriesConn(config=config) as conn:
     # Single file, statements executed sequentially
     conn.execute_statements_from_files("sql/setup.sql")
 
@@ -137,14 +116,7 @@ from iseries_connector import ISeriesConn, ISeriesConfig
 
 config = ISeriesConfig.from_env()
 
-with ISeriesConn(
-    dsn=config.dsn,
-    username=config.username,
-    password=config.password,
-    timeout=config.timeout,
-    max_retries=config.max_retries,
-    retry_delay=config.retry_delay,
-) as conn:
+with ISeriesConn(config=config) as conn:
     # The file must contain exactly one SQL query
     df = conn.fetch_from_file("sql/top_customers.sql")
     print(f"Retrieved {len(df)} rows")
@@ -187,6 +159,50 @@ batch_results = list(
 )
 for r in batch_results:
     print(f"{r.source_schema}.{r.source_table}: success={r.is_successful}")
+```
+
+### 7. Using a `.env` file and `load_env`
+
+You can keep credentials and connection details in a simple `.env` file in your working directory:
+
+```bash
+ISERIES_DSN=MY_DSN
+ISERIES_USERNAME=user
+ISERIES_PASSWORD=pass
+
+# Optional data transfer settings
+ISERIES_HOST_NAME=my.host.name
+ISERIES_ACS_LAUNCHER_PATH=/path/to/acslaunch_win-64.exe
+ISERIES_RAW_DATA_DIR=/path/to/raw_data
+ISERIES_DATA_PACKAGE_DIR=/path/to/data_package
+```
+
+Then load configuration in Python:
+
+```python
+from iseries_connector import (
+    ISeriesConn,
+    ISeriesConfig,
+    DataTransferConfig,
+    DataTransferManager,
+)
+
+# ISeriesConn configuration from .env / environment
+conn_config = ISeriesConfig.from_env()
+with ISeriesConn(config=conn_config) as conn:
+    df = conn.fetch("SELECT * FROM SCHEMA.TABLE")
+
+# Data transfer configuration from .env / environment
+dt_config = DataTransferConfig.from_env()
+manager = DataTransferManager(config=dt_config)
+result = next(
+    manager.transfer_data(
+        source_schema="SCHEMA",
+        source_table="TABLE",
+        sql_statement="SELECT * FROM SCHEMA.TABLE",
+    )
+)
+print(result)
 ```
 
 ## Configuration
@@ -262,7 +278,7 @@ pytest --cov=src/iseries_connector
 
 ## Documentation
 
-Full documentation is available at [Read the Docs](https://jmfelice.github.io/iseries_connector/).
+Full documentation is available at [Read the Docs](https://iseries-connector.readthedocs.io/).
 
 ## Contributing
 

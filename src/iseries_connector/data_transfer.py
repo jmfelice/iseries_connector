@@ -45,6 +45,7 @@ from .exceptions import (
     ConfigurationError,
     ValidationError
 )
+from .iseries_connector import load_env
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -98,6 +99,9 @@ class DataTransferConfig:
         Raises:
             ValueError: If required environment variables are missing
         """
+        # Load environment variables from a .env file (if present),
+        # without overwriting any existing environment variables.
+        load_env()
         return cls(
             host_name=os.environ.get('ISERIES_HOST_NAME', ''),
             database=os.environ.get('ISERIES_DATABASE', '*SYSBAS'),
@@ -352,34 +356,62 @@ class DataTransferManager:
     
     def __init__(
         self,
-        host_name: str,
+        host_name: Optional[str] = None,
         acs_launcher_path: str = "C:/Program Files/IBMiAccess_v1r1/Start_Programs/Windows_x86-64/acslaunch_win-64.exe",
         database: str = "*SYSBAS",
         batch_size: int = 15,
         template_path: Optional[str] = None,
         local_raw_data_directory: Optional[str] = None,
-        local_data_package_directory: Optional[str] = None
+        local_data_package_directory: Optional[str] = None,
+        config: Optional[DataTransferConfig] = None,
     ):
         """Initialize the data transfer manager.
         
+        You can EITHER provide the individual configuration parameters
+        (with ``host_name`` being required) OR pass a ``DataTransferConfig``
+        instance via the ``config`` argument, but not both at the same time.
+        
         Args:
-            host_name: The hostname of the iSeries system
+            host_name: The hostname of the iSeries system. Required if ``config``
+                is not provided.
             acs_launcher_path: Path to the ACS Launcher executable
             database: The database name (default: *SYSBAS)
             batch_size: Number of concurrent transfers (default: 15)
             template_path: Path to the DTFX template file (default: uses built-in template)
             local_raw_data_directory: Base directory for raw data files
             local_data_package_directory: Base directory for DTFX files
+            config: Pre-built configuration object. When provided, all other
+                parameters must remain at their default values.
         """
-        self.config = DataTransferConfig(
-            host_name=host_name,
-            acs_launcher_path=acs_launcher_path,
-            database=database,
-            batch_size=batch_size,
-            template_path=template_path,
-            local_raw_data_directory=local_raw_data_directory,
-            local_data_package_directory=local_data_package_directory
-        )
+        if config is not None:
+            # Ensure that explicit parameters are not mixed with a provided config
+            if (
+                host_name is not None
+                or acs_launcher_path != "C:/Program Files/IBMiAccess_v1r1/Start_Programs/Windows_x86-64/acslaunch_win-64.exe"
+                or database != "*SYSBAS"
+                or batch_size != 15
+                or template_path is not None
+                or local_raw_data_directory is not None
+                or local_data_package_directory is not None
+            ):
+                raise ValidationError(
+                    "Provide either 'config' or individual configuration parameters, but not both."
+                )
+            self.config = config
+        else:
+            if host_name is None:
+                raise ValidationError(
+                    "host_name is required when 'config' is not provided."
+                )
+            self.config = DataTransferConfig(
+                host_name=host_name,
+                acs_launcher_path=acs_launcher_path,
+                database=database,
+                batch_size=batch_size,
+                template_path=template_path,
+                local_raw_data_directory=local_raw_data_directory,
+                local_data_package_directory=local_data_package_directory,
+            )
         self._validate_config()
     
     def _validate_config(self) -> None:

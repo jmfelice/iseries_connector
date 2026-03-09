@@ -1,36 +1,10 @@
 iSeries Connector Module
 =======================
 
-.. automodule:: iseries_connector.core
+.. automodule:: iseries_connector
    :members:
    :undoc-members:
    :show-inheritance:
-
-.. automodule:: iseries_connector.models
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. automodule:: iseries_connector.exceptions
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. automodule:: iseries_connector.utils
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 4
-
-   iseries_connector.core
-   iseries_connector.models
-   iseries_connector.exceptions
-   iseries_connector.utils
 
 Configuration
 ------------

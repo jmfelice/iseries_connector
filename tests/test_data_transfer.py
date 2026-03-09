@@ -97,6 +97,43 @@ class TestDataTransferConfig:
         assert config.database == 'ENVDB'
         assert config.batch_size == 20
 
+    def test_from_env_uses_dotenv_when_env_missing(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        mock_file_exists: MagicMock,
+    ) -> None:
+        """.from_env should fall back to values from a .env file."""
+        dotenv_path = tmp_path / ".env"
+        dotenv_path.write_text(
+            "ISERIES_HOST_NAME=dotenv.host.com\n"
+            "ISERIES_DATABASE=DOTENVDB\n"
+            "ISERIES_BATCH_SIZE=25\n"
+            "ISERIES_ACS_LAUNCHER_PATH=/path/to/acs.exe\n"
+            "ISERIES_RAW_DATA_DIR=/tmp/raw\n"
+            "ISERIES_DATA_PACKAGE_DIR=/tmp/pkg\n"
+        )
+
+        monkeypatch.chdir(tmp_path)
+        for key in (
+            "ISERIES_HOST_NAME",
+            "ISERIES_DATABASE",
+            "ISERIES_BATCH_SIZE",
+            "ISERIES_ACS_LAUNCHER_PATH",
+            "ISERIES_RAW_DATA_DIR",
+            "ISERIES_DATA_PACKAGE_DIR",
+        ):
+            monkeypatch.delenv(key, raising=False)
+
+        config = DataTransferConfig.from_env()
+
+        assert config.host_name == "dotenv.host.com"
+        assert config.database == "DOTENVDB"
+        assert config.batch_size == 25
+        assert config.acs_launcher_path == "/path/to/acs.exe"
+        assert config.local_raw_data_directory == "/tmp/raw"
+        assert config.local_data_package_directory == "/tmp/pkg"
+
     def test_validate_missing_host(self, mock_file_exists: MagicMock) -> None:
         """Test validation with missing host name."""
         with pytest.raises(ValidationError, match="Host name is required"):
@@ -346,3 +383,27 @@ class TestDataTransferManager:
                 sql_statement=["SELECT * FROM TEST1.TABLE1"]
             )) 
         
+    def test_manager_can_be_created_from_env_config(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        mock_file_exists: MagicMock,
+    ) -> None:
+        """Ensure DataTransferManager can be created from DataTransferConfig.from_env()."""
+        dotenv_path = tmp_path / ".env"
+        dotenv_path.write_text(
+            "ISERIES_HOST_NAME=dotenv.host.com\n"
+            "ISERIES_DATABASE=DOTENVDB\n"
+            "ISERIES_BATCH_SIZE=10\n"
+        )
+
+        monkeypatch.chdir(tmp_path)
+        for key in ("ISERIES_HOST_NAME", "ISERIES_DATABASE", "ISERIES_BATCH_SIZE"):
+            monkeypatch.delenv(key, raising=False)
+
+        config = DataTransferConfig.from_env()
+        manager = DataTransferManager(config=config)
+
+        assert manager.config.host_name == "dotenv.host.com"
+        assert manager.config.database == "DOTENVDB"
+        assert manager.config.batch_size == 10

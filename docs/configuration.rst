@@ -89,14 +89,10 @@ Once you have a configuration object, you can use it to create a connection:
    from iseries_connector import ISeriesConn, ISeriesConfig
 
    # Create configuration
-   config = ISeriesConfig(
-       dsn="MY_DSN",
-       username="admin",
-       password="secret"
-   )
+   config = ISeriesConfig.from_env()
 
    # Create connection
-   with ISeriesConn(**config.__dict__) as conn:
+   with ISeriesConn(config=config) as conn:
        # Use the connection
        df = conn.fetch("SELECT * FROM MYTABLE")
 

@@ -4,6 +4,7 @@ import os
 import warnings
 import time
 import logging
+from pathlib import Path
 from typing import Union, List, Dict, Optional, Any, Generator
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
@@ -20,6 +21,40 @@ logger.addHandler(logging.NullHandler())
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=UserWarning)
+
+
+def load_env(path: Optional[str] = None) -> None:
+    """
+    Load simple KEY=VALUE pairs from a .env file into os.environ.
+
+    If ``path`` is None, this looks for a ``.env`` file in the current
+    working directory. Existing environment variables are not overwritten.
+    """
+    if path is None:
+        env_path = Path.cwd() / ".env"
+    else:
+        env_path = Path(path)
+
+    if not env_path.exists():
+        return
+
+    with env_path.open("r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key:
+                continue
+            # Do not overwrite existing environment variables
+            if key not in os.environ:
+                os.environ[key] = value
+
+    # Compatibility: allow ISERIES_USER in .env to populate ISERIES_USERNAME
+    if "ISERIES_USER" in os.environ and "ISERIES_USERNAME" not in os.environ:
+        os.environ["ISERIES_USERNAME"] = os.environ["ISERIES_USER"]
 
 @dataclass
 class ISeriesConfig:
@@ -63,13 +98,12 @@ class ISeriesConfig:
     @classmethod
     def from_env(cls) -> 'ISeriesConfig':
         """Create a configuration from environment variables.
-        
-        Returns:
-            ISeriesConfig: A new configuration instance
-            
-        Raises:
-            ValueError: If required environment variables are missing
+
+        This first attempts to populate ``os.environ`` from a ``.env``
+        file in the current working directory (if present), then reads
+        the relevant variables from ``os.environ``.
         """
+        load_env()
         return cls(
             dsn=os.environ.get('ISERIES_DSN', ''),
             username=os.environ.get('ISERIES_USERNAME', ''),
@@ -118,32 +152,60 @@ class ISeriesConn:
     
     def __init__(
         self,
-        dsn: str,
-        username: str,
-        password: str,
+        dsn: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
         timeout: int = 30,
         max_retries: int = 3,
-        retry_delay: int = 5
+        retry_delay: int = 5,
+        config: Optional[ISeriesConfig] = None,
     ):
         """
-        Initialize the ISeriesConn class with database credentials.
+        Initialize the ISeriesConn class with database credentials or a configuration object.
+        
+        You can EITHER provide the individual connection parameters (``dsn``, ``username``,
+        ``password``, and optional tuning parameters) OR pass an ``ISeriesConfig`` instance
+        via the ``config`` argument, but not both at the same time.
 
         Args:
-            dsn (str): The Data Source Name for the iSeries connection
-            username (str): The username for authentication
-            password (str): The password for authentication
-            timeout (int): Connection timeout in seconds (default: 30)
-            max_retries (int): Maximum number of connection retries (default: 3)
-            retry_delay (int): Delay between retries in seconds (default: 5)
+            dsn (Optional[str]): The Data Source Name for the iSeries connection. Required
+                if ``config`` is not provided.
+            username (Optional[str]): The username for authentication. Required if
+                ``config`` is not provided.
+            password (Optional[str]): The password for authentication. Required if
+                ``config`` is not provided.
+            timeout (int): Connection timeout in seconds (default: 30). Ignored if
+                ``config`` is provided.
+            max_retries (int): Maximum number of connection retries (default: 3). Ignored
+                if ``config`` is provided.
+            retry_delay (int): Delay between retries in seconds (default: 5). Ignored if
+                ``config`` is provided.
+            config (Optional[ISeriesConfig]): Pre-built configuration object. When
+                provided, all other parameters must remain at their default values.
         """
-        self.config = ISeriesConfig(
-            dsn=dsn,
-            username=username,
-            password=password,
-            timeout=timeout,
-            max_retries=max_retries,
-            retry_delay=retry_delay
-        )
+        if config is not None:
+            # Ensure that explicit parameters are not mixed with a provided config
+            if any(param is not None for param in (dsn, username, password)) or \
+               timeout != 30 or max_retries != 3 or retry_delay != 5:
+                raise ValidationError(
+                    "Provide either 'config' or individual connection parameters, but not both."
+                )
+            self.config = config
+        else:
+            # When config is not provided, dsn/username/password are required and
+            # must not rely on defaults.
+            if dsn is None or username is None or password is None:
+                raise ValidationError(
+                    "dsn, username, and password are required when 'config' is not provided."
+                )
+            self.config = ISeriesConfig(
+                dsn=dsn,
+                username=username,
+                password=password,
+                timeout=timeout,
+                max_retries=max_retries,
+                retry_delay=retry_delay,
+            )
         self.conn: Optional[pyodbc.Connection] = None
         self.echo: bool = False
         self._validate_config()
