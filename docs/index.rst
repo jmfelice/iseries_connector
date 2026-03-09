@@ -12,14 +12,13 @@ Features
 --------
 
 * Easy connection management with automatic retry logic
-* Support for both single and parallel statement execution
+* Support for both single and parallel SQL statement execution
+* Execute SQL scripts from files (sequential within a file, optional parallelism across files)
 * Pandas DataFrame integration for query results
 * Configurable through environment variables or direct initialization
 * Comprehensive error handling and logging
 * Full type hints and documentation
-* Connection pooling and resource management
-* Asynchronous query execution support
-* Comprehensive test coverage
+* Data transfer tooling for high-volume exports using IBM ACS
 
 Installation
 -----------
@@ -58,7 +57,14 @@ Quick Start Examples
    )
 
    # Connect to the database
-   with ISeriesConn(config) as conn:
+   with ISeriesConn(
+       dsn=config.dsn,
+       username=config.username,
+       password=config.password,
+       timeout=config.timeout,
+       max_retries=config.max_retries,
+       retry_delay=config.retry_delay,
+   ) as conn:
        print("Connected successfully!")
 
 2. Fetching Data
@@ -70,54 +76,141 @@ Quick Start Examples
 
    config = ISeriesConfig.from_env()  # Using environment variables
 
-   with ISeriesConn(config) as conn:
+   with ISeriesConn(
+       dsn=config.dsn,
+       username=config.username,
+       password=config.password,
+       timeout=config.timeout,
+       max_retries=config.max_retries,
+       retry_delay=config.retry_delay,
+   ) as conn:
        # Fetch data into a pandas DataFrame
        df = conn.fetch("SELECT * FROM SCHEMA.TABLE WHERE COLUMN = 'value'")
        print(f"Retrieved {len(df)} rows")
 
-3. Single Table Data Transfer
+3. Executing SQL Statements
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from iseries_connector import ISeriesConn, ISeriesConfig
+
+   config = ISeriesConfig.from_env()
+
+   with ISeriesConn(
+       dsn=config.dsn,
+       username=config.username,
+       password=config.password,
+       timeout=config.timeout,
+       max_retries=config.max_retries,
+       retry_delay=config.retry_delay,
+   ) as conn:
+       # Single statement
+       conn.execute_statements("UPDATE table1 SET col1 = 'value1'")
+
+       # Multiple statements sequentially on one connection
+       statements = [
+           "UPDATE table1 SET col1 = 'value1'",
+           "UPDATE table2 SET col2 = 'value2'",
+       ]
+       conn.execute_statements(statements, parallel=False)
+
+       # Multiple statements in parallel, each on its own connection
+       conn.execute_statements(statements, parallel=True)
+
+4. Executing SQL from Files
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from iseries_connector import ISeriesConn, ISeriesConfig
+
+   config = ISeriesConfig.from_env()
+
+   with ISeriesConn(
+       dsn=config.dsn,
+       username=config.username,
+       password=config.password,
+       timeout=config.timeout,
+       max_retries=config.max_retries,
+       retry_delay=config.retry_delay,
+   ) as conn:
+       # Single file, statements executed sequentially
+       conn.execute_statements_from_files("sql/setup.sql")
+
+       # Multiple files executed sequentially (per-file statements still sequential)
+       conn.execute_statements_from_files(
+           ["sql/schema.sql", "sql/data.sql"],
+           parallel_files=False,
+       )
+
+       # Multiple files executed in parallel (per-file statements still sequential)
+       conn.execute_statements_from_files(
+           ["sql/indexes.sql", "sql/cleanup.sql"],
+           parallel_files=True,
+       )
+
+5. Fetching Data from a SQL File
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from iseries_connector import ISeriesConn, ISeriesConfig
+
+   config = ISeriesConfig.from_env()
+
+   with ISeriesConn(
+       dsn=config.dsn,
+       username=config.username,
+       password=config.password,
+       timeout=config.timeout,
+       max_retries=config.max_retries,
+       retry_delay=config.retry_delay,
+   ) as conn:
+       # The file must contain exactly one SQL query
+       df = conn.fetch_from_file("sql/top_customers.sql")
+       print(f"Retrieved {len(df)} rows")
+
+6. Data Transfer with IBM ACS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
-   from iseries_connector import ISeriesConn, ISeriesConfig, DataTransferTask
+   from iseries_connector import DataTransferManager
 
-   config = ISeriesConfig.from_env()
+   manager = DataTransferManager(
+       host_name="your.hostname.com",
+       # acs_launcher_path can be overridden if needed
+   )
 
-   with ISeriesConn(config) as conn:
-       # Create a data transfer task for a single table
-       task = DataTransferTask(
+   # Single-table transfer
+   result = next(
+       manager.transfer_data(
            source_schema="SRC_SCHEMA",
            source_table="MY_TABLE",
-           target_schema="TGT_SCHEMA"
+           sql_statement="SELECT * FROM SRC_SCHEMA.MY_TABLE",
        )
-       
-       # Execute the transfer
-       result = conn.execute_transfer(task)
-       print(f"Transferred {result.rows_transferred} rows")
+   )
+   if result.is_successful:
+       print(f"Transferred {result.row_count} rows to {result.file_path}")
 
-4. Multiple Tables Data Transfer
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   from iseries_connector import ISeriesConn, ISeriesConfig, DataTransferTask
-
-   config = ISeriesConfig.from_env()
-
-   # List of tables to transfer
+   # Multiple tables in a batch
+   schemas = ["SRC_SCHEMA"] * 3
    tables = ["TABLE1", "TABLE2", "TABLE3"]
-
-   with ISeriesConn(config) as conn:
-       for table in tables:
-           task = DataTransferTask(
-               source_schema="SRC_SCHEMA",
-               source_table=table,
-               target_schema="TGT_SCHEMA"
-           )
-           
-           result = conn.execute_transfer(task)
-           print(f"Table {table}: Transferred {result.rows_transferred} rows")
+   statements = [
+       "SELECT * FROM SRC_SCHEMA.TABLE1",
+       "SELECT * FROM SRC_SCHEMA.TABLE2",
+       "SELECT * FROM SRC_SCHEMA.TABLE3",
+   ]
+   batch_results = list(
+       manager.transfer_data(
+           source_schema=schemas,
+           source_table=tables,
+           sql_statement=statements,
+       )
+   )
+   for r in batch_results:
+       print(f"{r.source_schema}.{r.source_table}: success={r.is_successful}")
 
 Configuration
 ------------

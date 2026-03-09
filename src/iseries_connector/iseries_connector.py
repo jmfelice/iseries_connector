@@ -356,26 +356,33 @@ class ISeriesConn:
 
             results = []
             for statement in statements:
+                sanitized_statement = statement.replace(";", "")
                 statement_start_time = time.time()
                 with self.conn.cursor() as cursor:
                     try:
-                        cursor.execute(statement)
+                        cursor.execute(sanitized_statement)
                         results.append({
-                            "success": True, 
-                            "statement": statement,
+                            "success": True,
+                            "statement": sanitized_statement,
                             "duration": time.time() - statement_start_time
                         })
                         if echo:
-                            logger.info(f"Success: Statement = {statement}, Duration = {time.time() - statement_start_time} seconds")
+                            logger.info(
+                                f"Success: Statement = {sanitized_statement}, "
+                                f"Duration = {time.time() - statement_start_time} seconds"
+                            )
                     except Exception as e:
                         results.append({
-                            "success": False, 
-                            "statement": statement, 
+                            "success": False,
+                            "statement": sanitized_statement,
                             "error": str(e),
                             "duration": time.time() - statement_start_time
                         })
                         if echo:
-                            logger.error(f"Failed: Statement = {statement}, Duration = {time.time() - statement_start_time} seconds")
+                            logger.error(
+                                f"Failed: Statement = {sanitized_statement}, "
+                                f"Duration = {time.time() - statement_start_time} seconds"
+                            )
         else:
             with ThreadPoolExecutor(max_workers=len(statements)) as executor:
                 results = list(executor.map(self._execute_single_statement, statements))
@@ -400,34 +407,284 @@ class ISeriesConn:
                 - 'duration' (float): Time taken to execute the statement in seconds
         """
         statement_start_time = time.time()
-        
+
         # Create a new connection for this thread
         conn = self._get_connection()
+        sanitized_stmt = stmt.replace(";", "")
 
         try:
             cursor = conn.cursor()
-            cursor.execute(stmt)
+            cursor.execute(sanitized_stmt)
             conn.commit()
             result = {
-                "statement": stmt,
+                "statement": sanitized_stmt,
                 "success": True,
                 "duration": time.time() - statement_start_time
             }
             if self.echo:
-                logger.info(f"Success: Statement = {stmt}, Duration = {time.time() - statement_start_time} seconds")
+                logger.info(
+                    f"Success: Statement = {sanitized_stmt}, "
+                    f"Duration = {time.time() - statement_start_time} seconds"
+                )
             return result
 
         except Exception as e:
             result = {
-                "statement": stmt,
+                "statement": sanitized_stmt,
                 "success": False,
                 "error": str(e),
                 "duration": time.time() - statement_start_time
             }
             if self.echo:
-                logger.error(f"Failed: Statement = {stmt}, Duration = {time.time() - statement_start_time} seconds")
+                logger.error(
+                    f"Failed: Statement = {sanitized_stmt}, "
+                    f"Duration = {time.time() - statement_start_time} seconds"
+                )
             return result
         
         finally:
             cursor.close()
             conn.close()
+
+    def _parse_sql_file(self, path: str) -> List[str]:
+        """
+        Read a SQL file and split it into individual statements.
+
+        Splits on semicolons and strips whitespace, ignoring empty statements.
+
+        Args:
+            path (str): Path to the SQL file.
+
+        Returns:
+            List[str]: List of SQL statements.
+
+        Raises:
+            ISeriesConnectorError: If the file cannot be read.
+        """
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError as e:
+            raise ISeriesConnectorError(f"Failed to read SQL file '{path}': {str(e)}") from e
+
+        parts = content.split(";")
+        statements: List[str] = []
+        for part in parts:
+            stmt = part.strip()
+            if not stmt:
+                continue
+            statements.append(stmt)
+        return statements
+
+    def _execute_statements_sequential_on_connection(
+        self,
+        conn: pyodbc.Connection,
+        statements: List[str],
+        echo: bool
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute multiple SQL statements sequentially on a given connection.
+
+        Args:
+            conn (pyodbc.Connection): The database connection to use.
+            statements (List[str]): List of SQL statements to execute.
+            echo (bool): Whether to log execution details.
+
+        Returns:
+            List[Dict[str, Any]]: Execution results for each statement.
+        """
+        results: List[Dict[str, Any]] = []
+
+        for statement in statements:
+            sanitized_statement = statement.replace(";", "")
+            statement_start_time = time.time()
+            cursor = conn.cursor()
+            try:
+                cursor.execute(sanitized_statement)
+                conn.commit()
+                results.append(
+                    {
+                        "success": True,
+                        "statement": sanitized_statement,
+                        "duration": time.time() - statement_start_time,
+                    }
+                )
+                if echo:
+                    logger.info(
+                        f"Success: Statement = {sanitized_statement}, "
+                        f"Duration = {time.time() - statement_start_time} seconds"
+                    )
+            except Exception as e:
+                results.append(
+                    {
+                        "success": False,
+                        "statement": sanitized_statement,
+                        "error": str(e),
+                        "duration": time.time() - statement_start_time,
+                    }
+                )
+                if echo:
+                    logger.error(
+                        f"Failed: Statement = {sanitized_statement}, "
+                        f"Duration = {time.time() - statement_start_time} seconds"
+                    )
+            finally:
+                cursor.close()
+
+        return results
+
+    def _execute_file_in_new_connection(self, path: str, echo: bool) -> List[Dict[str, Any]]:
+        """
+        Execute all statements from a SQL file using a new dedicated connection.
+
+        Statements within the file are always executed sequentially.
+
+        Args:
+            path (str): Path to the SQL file.
+            echo (bool): Whether to log execution details.
+
+        Returns:
+            List[Dict[str, Any]]: Execution results for each statement in the file.
+        """
+        statements = self._parse_sql_file(path)
+        file_start_time = time.time()
+
+        conn = self._get_connection()
+        try:
+            results = self._execute_statements_sequential_on_connection(conn, statements, echo)
+        finally:
+            conn.close()
+
+        if echo:
+            logger.info(
+                f"Total time taken to execute {len(statements)} statements from file "
+                f"{path}: {time.time() - file_start_time} seconds"
+            )
+        return results
+
+    def execute_statements_from_files(
+        self,
+        files: Union[str, List[str]],
+        parallel_files: bool = False,
+        echo: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute SQL statements loaded from one or more files.
+
+        Within each file, statements are always executed sequentially.
+        Across files, execution can be sequential or parallel.
+
+        Args:
+            files (Union[str, List[str]]): A single file path or list of file paths.
+            parallel_files (bool): If True, execute different files in parallel, each
+                using its own dedicated connection. If False, execute files sequentially
+                using the existing connection.
+            echo (Optional[bool]): Whether to log execution details.
+
+        Returns:
+            List[Dict[str, Any]]: List of execution results for all statements across
+            all files.
+        """
+        if isinstance(files, str):
+            file_paths: List[str] = [files]
+        else:
+            file_paths = list(files)
+
+        if not file_paths:
+            return []
+
+        start_time = time.time()
+        effective_echo = echo if echo is not None else self.echo
+
+        results: List[Dict[str, Any]] = []
+
+        if not parallel_files:
+            if self.conn is None:
+                self.connect()
+
+            for path in file_paths:
+                try:
+                    statements = self._parse_sql_file(path)
+                except Exception as e:
+                    error_result = {
+                        "success": False,
+                        "statement": f"-- file: {path}",
+                        "error": str(e),
+                        "duration": 0.0,
+                    }
+                    results.append(error_result)
+                    if effective_echo:
+                        logger.error(
+                            f"Failed to process SQL file {path}: {str(e)}"
+                        )
+                    continue
+
+                file_results = self.execute_statements(
+                    statements, parallel=False, echo=effective_echo
+                )
+                results.extend(file_results)
+        else:
+
+            def _run_file(path: str) -> List[Dict[str, Any]]:
+                try:
+                    return self._execute_file_in_new_connection(path, effective_echo)
+                except Exception as e:
+                    if effective_echo:
+                        logger.error(
+                            f"Failed to process SQL file {path} in parallel: {str(e)}"
+                        )
+                    return [
+                        {
+                            "success": False,
+                            "statement": f"-- file: {path}",
+                            "error": str(e),
+                            "duration": 0.0,
+                        }
+                    ]
+
+            with ThreadPoolExecutor(max_workers=len(file_paths)) as executor:
+                for file_results in executor.map(_run_file, file_paths):
+                    results.extend(file_results)
+
+        if effective_echo:
+            logger.info(
+                f"Total time taken to execute {len(results)} statements "
+                f"from {len(file_paths)} file(s): {time.time() - start_time} seconds"
+            )
+        return results
+
+    def fetch_from_file(
+        self,
+        path: str,
+    ) -> Union[pd.DataFrame, Generator[pd.DataFrame, None, None]]:
+        """
+        Execute a single-query SQL file and return its result set.
+
+        The file must contain exactly one non-empty SQL statement when split on
+        semicolons. If multiple statements are found, a ValidationError is raised.
+
+        Args:
+            path (str): Path to the SQL file containing a single query.
+
+        Returns:
+            Union[pd.DataFrame, Generator[pd.DataFrame, None, None]]: Query result,
+            mirroring the return type of ``fetch``.
+
+        Raises:
+            ValidationError: If the file does not contain exactly one statement.
+            ISeriesConnectorError: If the file cannot be read.
+        """
+        statements = self._parse_sql_file(path)
+
+        if not statements:
+            raise ValidationError(
+                f"SQL file '{path}' does not contain a valid SQL statement"
+            )
+        if len(statements) > 1:
+            raise ValidationError(
+                f"SQL file '{path}' contains multiple SQL statements; "
+                "fetch_from_file expects exactly one."
+            )
+
+        query = statements[0]
+        return self.fetch(query)
